@@ -1,4 +1,5 @@
 from bcoding import bencode, bdecode
+import hashlib
 
 #Parsing the .torrent file
 class TorrentFile:
@@ -24,10 +25,16 @@ class TorrentFile:
 				for index in range(0, len(self.pieces), 20):
 					self.pieceHashes.append(self.pieces[index:index + 20])
 					#print(self.pieceHashes[index % 20])
+
+				#Calculate infohash
+				encoded = bencode(torrent['info'])
+				m = hashlib.sha1(encoded)
+				self.infoHash = m.digest()
+
 			else:
 				#Multiple files
 				print("Multi-file torrents not supported!")
 
 #Testing
 tor1 = TorrentFile("Ahiru33.mkv.torrent")
-print(tor1.pieceHashes)
+#print(tor1.pieceHashes)
