@@ -3,8 +3,16 @@ from bcoding import bencode, bdecode
 import hashlib
 import requests
 import secrets
+import struct
+import socket
 
-#Parsing the .torrent file
+# Peer class
+class Peer:
+	def __init__(self, ip, port):
+		self.ip = ip
+		self.port = port
+
+# Parsing the .torrent file
 class TorrentFile:
 	def __init__(self, filepath):
 		self.filepath = filepath
@@ -16,6 +24,7 @@ class TorrentFile:
 		self.name = ""
 		self.pieces = ""
 		self.peer_id = secrets.token_bytes(20)
+		self.peerList = []
 
 		# Open .torrent file and decode data
 		with open(filepath, "rb") as f:
@@ -42,24 +51,40 @@ class TorrentFile:
 			# Multiple files
 			print("Multi-file torrents not supported!")
 
-	def getPeers(self):
+	def parsePeers(self):
 		qParams = {
 		"info_hash": self.infoHash,
 		"peer_id": self.peer_id,
 		"port": "6881",
 		"uploaded": "0",
 		"downloaded": "0",
-		"left": self.length
+		"left": self.length,
+		"compact": "0"
 		}
+		# response = bdecode(requests.get(self.announce, params = qParams).content)
 		response = bdecode(requests.get(self.announce, params = qParams).content)
-		return response
+		peers = response['peers']
+		offset = 0
+		while offset < len(peers):
+			# Unpack bytes for IP from byte-string, as big-endian integers and get the first element from the tuple
+			ip_unpacked = struct.unpack_from("!i", peers, offset)[0]
+			# Pack read bytes into a single IP and convert to standard 32-bit IP notation
+			ip = socket.inet_ntoa(struct.pack("!i", ip_unpacked))
+			# Update offset to read the corresponding port
+			offset += 4
+			# Unpack bytes for port and join them as Big-endian uint16 to form port
+			port = struct.unpack_from("!H", peers, offset)[0]
+			# Update offset for next peer
+			offset += 2
+			# Add parsed peer to peerlist
+			self.peerList.append(Peer(ip, port))
 
 #Testing
 def main():
 	tor1 = TorrentFile("Ahiru33.mkv.torrent")
-	response = tor1.getPeers()
-	
-	# print(tor1.pieceHashes)
+	tor1.parsePeers()
+	for peer in tor1.peerList:
+		print("IP: {}, Port: {}".format(peer.ip, peer.port))
 
 if __name__ == "__main__":
 	main()
