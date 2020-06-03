@@ -23,13 +23,19 @@ class Connect:
 			s = socket.create_connection((peer.ip, peer.port), 5)
 
 			# Send handshakeString for BitTorrent Protocol
-			handshakeString = bytes(chr(19) + "BitTorrent protocol" + 8*chr(0) + infoHash + local_peer_id, 'utf-8')
+			handshakeString = bytes(chr(19) + "BitTorrent protocol" + 8*chr(0), 'utf-8') + infoHash + bytes(local_peer_id, 'utf-8')
 			print(handshakeString)
 			s.send(handshakeString)
 
 			# Receive handshakeString from Peer
-			handshakeResponse = s.recv(1024).decode('utf-8')
-			print(handshakeResponse)
+			handshakeResponse = s.recv(1024)
+			length = struct.unpack_from("!I", handshakeResponse, 0)[0]
+			id = struct.unpack_from("B", handshakeResponse, 4)[0]
+			payload = struct.unpack_from("{}s".format(len(handshakeResponse) - 5), handshakeResponse, 5)[0]
+
+			print("Length: {}".format(length))
+			print("ID: {}".format(id))
+			print("Payload: {}".format(payload))
 
 		except socket.timeout:
 			print("Socket timed out!")
@@ -79,7 +85,7 @@ class TorrentFile:
 		qParams = {
 		"info_hash": self.infoHash,
 		"peer_id": local_peer_id,
-		"port": "6881",
+		"port": "6882",
 		"uploaded": "0",
 		"downloaded": "0",
 		"left": self.length,
@@ -105,7 +111,7 @@ class TorrentFile:
 
 #Testing
 def main():
-	tor1 = TorrentFile("Ahiru33.mkv.torrent")
+	tor1 = TorrentFile("Ahiru20.mkv.torrent")
 	tor1.parsePeers()
 	for peer in tor1.peerList:
 		print("IP: {}, Port: {}".format(peer.ip, peer.port))
