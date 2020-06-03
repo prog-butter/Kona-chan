@@ -27,21 +27,54 @@ class Connect:
 			print(handshakeString)
 			s.send(handshakeString)
 
-			# Receive handshakeString from Peer
-			handshakeResponse = s.recv(1024)
-			length = struct.unpack_from("!I", handshakeResponse, 0)[0]
-			id = struct.unpack_from("B", handshakeResponse, 4)[0]
-			payload = struct.unpack_from("{}s".format(len(handshakeResponse) - 5), handshakeResponse, 5)[0]
+			"""
+			1. Put each peer on it's own thread
+			2. After handshake, peer will send an <id=5> packet telling which pieces that peer has. This message might not come at once.
+				(NEED TO HANDLE THIS) Keep reading till complete message is received
+			"""
 
-			print("Length: {}".format(length))
-			print("ID: {}".format(id))
-			print("Payload: {}".format(payload))
+			# Receive handshakeString from Peer
+			handshakeResponse = s.recv(1 + 19 + 8 + 20 + 20)
+			if(len(handshakeResponse) == 0):
+				print("Ignoring empty reply")
+			else:
+				while(len(handshakeResponse) != 0):
+					print("\n")
+					print(handshakeResponse, end = '\n\n')
+					protLen = struct.unpack_from("B", handshakeResponse, 0)[0]
+					print(protLen)
+
+					protName = handshakeResponse[1:20].decode('utf-8') #protName is 19 bytes
+					print(protName, end="*\n")
+
+					protExt = struct.unpack_from("8s", handshakeResponse, 20)[0]
+					print(protExt)
+
+					protHash = struct.unpack_from("20s", handshakeResponse, 28)[0]
+					print("InfoHash: {}".format(infoHash))
+					print(protHash)
+					if(infoHash == protHash):
+						print("HASHES MATCH!")
+					else:
+						print("DIFFERENT HASHES!")
+
+					protID = struct.unpack_from("20s", handshakeResponse, 48)[0]
+					print(protID)
+
+					handshakeResponse = s.recv(2048)
+					lensecond = (len(handshakeResponse) - 5) * 8
+					print("length of second message: {}".format(lensecond))
+					if(len(handshakeResponse) == 0):
+						print("Nothing to read from this peer after initial receive")
 
 		except socket.timeout:
 			print("Socket timed out!")
 
 		except socket.error:
 			print("Connection error.")
+
+		except Exception as e:
+			print(e)
 
 # Parsing the .torrent file
 class TorrentFile:
@@ -70,7 +103,7 @@ class TorrentFile:
 			for index in range(0, len(self.pieces), 20):
 				self.pieceHashes.append(self.pieces[index:index + 20])
 				# print(self.pieceHashes[index % 20])
-
+			print("No. of pieces: {}".format(len(self.pieceHashes)))
 			# Calculate infohash
 			encoded = bencode(torrent['info'])
 			m = hashlib.sha1(encoded)
@@ -111,7 +144,7 @@ class TorrentFile:
 
 #Testing
 def main():
-	tor1 = TorrentFile("Ahiru20.mkv.torrent")
+	tor1 = TorrentFile("Ahiru34.mkv.torrent")
 	tor1.parsePeers()
 	for peer in tor1.peerList:
 		print("IP: {}, Port: {}".format(peer.ip, peer.port))
