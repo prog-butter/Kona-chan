@@ -2,15 +2,40 @@
 from bcoding import bencode, bdecode
 import hashlib
 import requests
-import secrets
+import random
 import struct
 import socket
+
+# Globals
+local_peer_id = "-KC0010-" + str(random.randint(100000000000, 999999999999))
 
 # Peer class
 class Peer:
 	def __init__(self, ip, port):
 		self.ip = ip
-		self.port = port
+		self.port = int(port)
+
+# Connect to a peer
+class Connect:
+	def __init__(self, peer, infoHash):
+		try:
+			# Establish TCP connection with peer
+			s = socket.create_connection((peer.ip, peer.port), 5)
+
+			# Send handshakeString for BitTorrent Protocol
+			handshakeString = bytes(chr(19) + "BitTorrent protocol" + 8*chr(0) + infoHash + local_peer_id, 'utf-8')
+			print(handshakeString)
+			s.send(handshakeString)
+
+			# Receive handshakeString from Peer
+			handshakeResponse = s.recv(1024).decode('utf-8')
+			print(handshakeResponse)
+
+		except socket.timeout:
+			print("Socket timed out!")
+
+		except socket.error:
+			print("Connection error.")
 
 # Parsing the .torrent file
 class TorrentFile:
@@ -23,7 +48,6 @@ class TorrentFile:
 		self.length = 0
 		self.name = ""
 		self.pieces = ""
-		self.peer_id = secrets.token_bytes(20)
 		self.peerList = []
 
 		# Open .torrent file and decode data
@@ -54,12 +78,12 @@ class TorrentFile:
 	def parsePeers(self):
 		qParams = {
 		"info_hash": self.infoHash,
-		"peer_id": self.peer_id,
+		"peer_id": local_peer_id,
 		"port": "6881",
 		"uploaded": "0",
 		"downloaded": "0",
 		"left": self.length,
-		"compact": "0"
+		"compact": "1"
 		}
 		# response = bdecode(requests.get(self.announce, params = qParams).content)
 		response = bdecode(requests.get(self.announce, params = qParams).content)
@@ -85,6 +109,8 @@ def main():
 	tor1.parsePeers()
 	for peer in tor1.peerList:
 		print("IP: {}, Port: {}".format(peer.ip, peer.port))
+		Connect(peer, tor1.infoHash)
+
 
 if __name__ == "__main__":
 	main()
