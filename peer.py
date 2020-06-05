@@ -20,6 +20,11 @@ class Peer:
 		self.peer_choking = 1 # peer is choking this client
 		self.peer_interested = 0 # peer is interested in this client
 
+	def mainLoop(self):
+		print("{}:{} has started!".format(self.ip, self.port))
+		time.sleep(0.1)
+		print("{}:{} is closing!".format(self.ip, self.port))
+
 	def handshake(self):
 		isGoodPeer = 1
 		try:
@@ -87,13 +92,6 @@ class Peer:
 
 		if(isGoodPeer):
 			print("\033[32mFound a good peer!\033[39m")
-			#self.goodPeerList.append(peer)
-			return 1
+			self.mainLoop()
 
-		# Unsuccessful handshake
-		return 0
-
-	def start(self):
-		print("{}:{} has started!".format(self.ip, self.port))
-		time.sleep(0.1)
-		print("{}:{} is closing!".format(self.ip, self.port))
+		# Unsuccessful handshake, thread exits

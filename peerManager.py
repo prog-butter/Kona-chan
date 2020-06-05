@@ -59,15 +59,14 @@ class peerManager:
 
 		# Start thread for good peers
 		executor = concurrent.futures.ThreadPoolExecutor(max_workers=50)
-		f = []
 		# Attempt handshake with all peers
 		for index in range(len(self.peerList)):
-			f.append(executor.submit(self.peerList[index].handshake))
+			executor.submit(self.peerList[index].handshake)
 
 		# Run start() for peers with successful handshake
-		for index in range(len(self.peerList)):
-			if(f[index].result()):
-				executor.submit(self.peerList[index].start)
+		# for index in range(len(self.peerList)):
+		# 	if(f[index].result()):
+		# 		executor.submit(self.peerList[index].start)
 
 		print("Main thread continues...")
 
