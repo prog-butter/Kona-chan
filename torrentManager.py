@@ -4,8 +4,10 @@ import requests
 import struct
 import socket
 import random
+import threading
 
 import peerManager as pm
+import pieceManager as piem
 
 class torrentManager:
 	def __init__(self, torrentpath):
@@ -18,6 +20,8 @@ class torrentManager:
 		self.name = ""
 		self.pieces = ""
 		self.local_peer_id = bytes("-KC0010-" + str(random.randint(100000000000, 999999999999)), 'utf-8')
+		# Lock to synchronize calling pieceManager methods from peers
+		self.piemLock = threading.Lock()
 
 		# Open .torrent file and decode data
 		with open(torrentpath, "rb") as f:
@@ -62,6 +66,7 @@ class torrentManager:
 
 		# Instantiate a peer manager for this torrent file
 		print("Creating peer manager for this torrent")
+		self.pieManager = piem.pieceManager(self)
 		self.pManager = pm.peerManager(response['peers'], self)
 
 	# Timer for re-announce

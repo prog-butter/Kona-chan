@@ -29,7 +29,7 @@ class peerManager:
 			# Update offset for next peer
 			offset += 2
 			# Add parsed peer to peerlist
-			self.peerList.append(p.Peer(ip, port, self.tManager))
+			self.peerList.append(p.Peer(ip, port, self.tManager, self.tManager.pieManager))
 
 		"""
 			Implementer's Note: Even 30 peers is plenty, the official client version 3 in fact only

@@ -13,7 +13,7 @@ PSTR = "BitTorrent protocol"
 
 # Peer class representing every peer and it's attributes
 class Peer:
-	def __init__(self, ip, port, torMan):
+	def __init__(self, ip, port, torMan, pieMan):
 		self.ip = ip
 		self.port = int(port)
 		self.sock = None
@@ -28,6 +28,7 @@ class Peer:
 		}
 
 		self.tManager = torMan
+		self.pieManager = pieMan
 
 	# Establish TCP connection with peer
 	def connect(self):
@@ -111,6 +112,7 @@ class Peer:
 		peer.read_buffer += peer.read_from_socket()
 		# Get messages from the buffer
 		peer.get_messages()
+
 
 if __name__ == "__main__":
 	print("Not supposed to run this way!")
