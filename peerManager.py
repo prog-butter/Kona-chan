@@ -31,25 +31,6 @@ class peerManager:
 			# Add parsed peer to peerlist
 			self.peerList.append(p.Peer(ip, port, self.tManager))
 
-		# Sort out peers that reply
-		# peerCnt = 1
-		# for peer in self.peerList:
-		# 	if(peerCnt >= 21):
-		# 		break
-		# 	isGoodPeer = 1
-		# 	print("Peer {}:".format(peerCnt))
-		# 	peerCnt += 1
-
-		# 	# except Exception as e:
-		# 	# 	print(e)
-
-		# 	if(isGoodPeer):
-		# 		print("\033[32mFound a good peer!\033[39m")
-		# 		self.goodPeerList.append(peer)
-
-			# TO-DO
-			# Decide whether to remove this peer from the fullList
-
 		"""
 			Implementer's Note: Even 30 peers is plenty, the official client version 3 in fact only
 			actively forms new connections if it has less than 30 peers and will refuse connections
@@ -61,7 +42,7 @@ class peerManager:
 		executor = concurrent.futures.ThreadPoolExecutor(max_workers=50)
 		# Attempt handshake with all peers
 		for index in range(len(self.peerList)):
-			executor.submit(self.peerList[index].handshake)
+			executor.submit(self.peerList[index].mainLoop)
 
 		# Run start() for peers with successful handshake
 		# for index in range(len(self.peerList)):
@@ -70,5 +51,5 @@ class peerManager:
 
 		print("Main thread continues...")
 
-		executor.shutdown(wait = True)
-		print("All peer threads finished")
+		# executor.shutdown(wait = True)
+		# print("All peer threads finished")

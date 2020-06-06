@@ -1,10 +1,46 @@
 #!/usr/bin/env python3
 import struct
 import bitstring
+import logging
 
 # Globals
-PSTR_LEN = 19
 PSTR = b"BitTorrent protocol"
+PSTR_LEN = len(PSTR)
+
+# Used to raise wrong message exceptions
+class WrongMessageException(Exception):
+    pass
+
+# Class to parse message id and payload of received message and send it to appropriate message parser
+class MessageDispatcher:
+    def __init__(self, payload):
+        self.payload = payload
+
+    def dispatch(self):
+        try:
+            payload_length, message_id = struct.unpack("!IB", self.payload[:5])
+
+        except:
+            logging.exception("Error in unpacking message.")
+            return None
+
+        map_id_to_message = {
+            0: "Choke",
+            1: "UnChoke",
+            2: "Interested",
+            3: "NotInterested",
+            4: "Have",
+            5: "BitField",
+            6: "Request",
+            7: "Piece",
+            8: "Cancel",
+            9: "Port"
+        }
+
+        if message_id not in list(map_id_to_message.keys()):
+            raise WrongMessageException("Message ID not recognized.")
+
+        return map_id_to_message[message_id].decode(self.payload)
 
 # Abstract base class - acts as a blueprint for all child classes
 class Message:
@@ -38,8 +74,8 @@ class Handshake(Message):
 
     # Encode to form handshake request
     def encode(self):
-        reserved = 8 * b'\x00'
-        handshake_msg = struct.pack("!B{}s8s20s20s".format(PSTR_LEN), PSTR_LEN, PSTR, self.infoHash, self.peer_id)
+        reserved = b'\x00' * 8
+        handshake_msg = struct.pack("!B{}s8s20s20s".format(PSTR_LEN), PSTR_LEN, PSTR, reserved, self.infoHash, self.peer_id)
         return handshake_msg
 
     # Decode handshake response

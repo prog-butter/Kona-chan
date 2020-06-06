@@ -2,96 +2,115 @@ import time
 import socket
 import struct
 import colorama
+import logging
+import messages
 
+# Globals
+colorama.init()
 DEFAULT_TIMEOUT_VALUE = 3
-
 PSTRLEN = 19
 PSTR = "BitTorrent protocol"
 
+# Peer class representing every peer and it's attributes
 class Peer:
 	def __init__(self, ip, port, torMan):
-		colorama.init()
 		self.ip = ip
 		self.port = int(port)
+		self.sock = None
+		self.isGoodPeer = 0
+		self.pieces = []
+		self.read_buffer = b''
+		self.state = {
+			"am_choking" = 1
+			"am_interested" = 0
+			"peer_choking" = 1
+			"peer_interested" = 0
+		}
+
 		self.tManager = torMan
 
-		self.am_choking = 1 # this client is choking the peer
-		self.am_interested = 0 # this client is interested in the peer
-		self.peer_choking = 1 # peer is choking this client
-		self.peer_interested = 0 # peer is interested in this client
-
-	def mainLoop(self):
-		print("{}:{} has started!".format(self.ip, self.port))
-		time.sleep(0.1)
-		print("{}:{} is closing!".format(self.ip, self.port))
-
-	def handshake(self):
-		isGoodPeer = 1
+	# Establish TCP connection with peer
+	def connect(self):
 		try:
-			# Establish TCP connection with peer
-			s = socket.create_connection((self.ip, self.port), DEFAULT_TIMEOUT_VALUE)
-
-			# Send handshakeString for BitTorrent Protocol
-			handshakeString = bytes(chr(PSTRLEN) + PSTR + 8*chr(0), 'utf-8') + self.tManager.infoHash + bytes(self.tManager.local_peer_id, 'utf-8')
-			print("Sending handshakeString: <{}>".format(handshakeString))
-			s.send(handshakeString)
-
-			"""
-			1. Put each peer on it's own thread
-			2. After handshake, peer will send an <id=5> packet telling which pieces that peer has. This message might not come at once.
-				(NEED TO HANDLE THIS) Keep reading till complete message is received
-			"""
-
-			# Receive handshakeString from peer
-			handshakeResponse = s.recv(1 + 19 + 8 + 20 + 20)
-			if(len(handshakeResponse) == 0):
-				print("\033[31mReceived an empty handshakeResponse\033[39m")
-				isGoodPeer = 0
-			else:
-				print("Received handshakeResponse: <{}>".format(handshakeResponse))
-				pstrlen = struct.unpack_from("B", handshakeResponse, 0)[0]
-				if(pstrlen == PSTRLEN):
-					print("\033[32mpstrlen matches!\033[39m")
-				else:
-					print("ERROR: pstrlen is not {}".format(PSTRLEN))
-					isGoodPeer = 0
-
-				pstr = handshakeResponse[1:20].decode('utf-8') #pstr is 19 bytes
-				if(pstr == PSTR):
-					print("\033[32mpstr matches!\033[39m")
-				else:
-					print("ERROR: pstr is not {}".format(PSTR))
-					isGoodPeer = 0
-
-				reservedBytes = struct.unpack_from("8s", handshakeResponse, 20)[0]
-				print("Received reservedBytes: <{}>".format(reservedBytes))
-
-				recInfoHash = struct.unpack_from("20s", handshakeResponse, 28)[0]
-				if(self.tManager.infoHash == recInfoHash):
-					print("\033[32minfoHash matches!\033[39m")
-				else:
-					print("ERROR: infoHash is not {}".format(self.tManager.infoHash))
-					isGoodPeer = 0
-
-				recPeerID = struct.unpack_from("20s", handshakeResponse, 48)[0]
-				print("Received peerID: <{}>".format(recPeerID))
-
-				# handshakeResponse = s.recv(2048)
-				# lensecond = (len(handshakeResponse) - 5) * 8
-				# print("length of second message: {}".format(lensecond))
-				# if(len(handshakeResponse) == 0):
-				# 	print("Nothing to read from this peer after initial receive")
+			self.sock = socket.create_connection((self.ip, self.port), DEFAULT_TIMEOUT_VALUE)
+			self.sock.setblocking(False)
+			self.isGoodPeer = 1
 
 		except socket.timeout:
 			print("\033[31mSocket timed out!\033[39m")
-			isGoodPeer = 0
+			self.isGoodPeer = 0
 
 		except socket.error:
 			print("\033[31mConnection error!\033[39m")
-			isGoodPeer = 0
+			self.isGoodPeer = 0
 
-		if(isGoodPeer):
-			print("\033[32mFound a good peer!\033[39m")
-			self.mainLoop()
+	# Send a message to peer
+	def send_msg(self, msg):
+		try:
+			self.sock.send(msg)
 
-		# Unsuccessful handshake, thread exits
+		except Exception as e:
+			logging.error("\033[91mFailed to send message!\033[0m")
+
+	# Reads from socket and returns the received data in bytes form
+	def read_from_socket(self):
+		data = b''
+		while True:
+			try:
+				buff = self.sock.recv(4096)
+				if len(buff) <= 0:
+					break
+
+				data += buff
+
+			except Exception:
+				logging.exception("Recieve failed.")
+				break
+
+		return data
+
+	# Do hanshake with peer
+	def handshake(self):
+		try:
+			# Send handshakeString for BitTorrent Protocol
+			handshake_msg = messages.Handshake(self.tManager.infoHash, self.tManager.local_peer_id).encode()
+			print("Sending handshakeString: <{}>".format(handshakeString))
+			self.send_msg(handshake_msg)
+
+		except Exception:
+			logging.exception("Error sending Handshake message.")
+
+	# Gets messages from read_buffer
+	def get_messages(self):
+		# Till read buffer is not empty (only contains length header) and the peer is a good peer
+		while len(self.read_buffer) > 4 and self.isGoodPeer:
+			# Get payload length from the first 4 bytes of the read buffer
+			payload_length = struct.unpack("!I", self.read_buffer[:4])
+			total_length = payload_length + 4
+
+			# If message in buffer is less than total length of expected message, break
+			if len(self.read_buffer) < total_length:
+				break
+			else:
+				# Read message till total length and update read buffer to resume from end of last message
+				payload = self.read_buffer[:total_length]
+				self.read_buffer = self.read_buffer[total_length:]
+
+			# Sends payload to the message dispatcher which returns an appropriate parsed message object
+			m = messages.MessageDispatcher(payload).dispatch()
+			return m
+
+	# Main loop
+	def mainLoop(self):
+		# Connect to peer
+		Peer peer;
+		peer.connect()
+		# Perform handshake
+		peer.handshake()
+		# Read from socket and fill buffer
+		peer.read_buffer += peer.read_from_socket()
+		# Get messages from the buffer
+		peer.get_messages()
+
+if __name__ == "__main__":
+	print("Not supposed to run this way!")

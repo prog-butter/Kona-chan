@@ -17,7 +17,7 @@ class torrentManager:
 		self.length = 0
 		self.name = ""
 		self.pieces = ""
-		self.local_peer_id = "-KC0010-" + str(random.randint(100000000000, 999999999999))
+		self.local_peer_id = bytes("-KC0010-" + str(random.randint(100000000000, 999999999999)), 'utf-8')
 
 		# Open .torrent file and decode data
 		with open(torrentpath, "rb") as f:
