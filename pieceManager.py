@@ -1,5 +1,7 @@
 import bitstring
 import queue
+import hashlib
+import os
 
 class pieceManager:
 	def __init__(self, torMan):
@@ -28,4 +30,17 @@ class pieceManager:
 	# Get piece from peer
 	# Write to disk if hashcheck matches otherwise add piece back to queue
 	def submitPiece(self, piece):
-		pass
+		# Check download piece with hash
+		m = hashlib.sha1(piece.data)
+		if(self.tManager.pieceHashes[piece.index] is m.digest()):
+			# TO-DO
+			# Write piece to disk
+
+		else:
+			# Return piece back to queue
+			self.pieceQueue.put(piece)
+
+	def loop(self):
+		print("pieceManager loop")
+		# TO-DO
+		# Add all pieces to queue (Run once)

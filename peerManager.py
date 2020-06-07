@@ -53,3 +53,6 @@ class peerManager:
 
 		# executor.shutdown(wait = True)
 		# print("All peer threads finished")
+
+	def loop(self):
+		print("peerManager loop")

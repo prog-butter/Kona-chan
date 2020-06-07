@@ -20,7 +20,8 @@ class torrentManager:
 		self.name = ""
 		self.pieces = ""
 		self.local_peer_id = bytes("-KC0010-" + str(random.randint(100000000000, 999999999999)), 'utf-8')
-		# Lock to synchronize calling pieceManager methods from peers
+		self.shouldLoop = 1
+		# Lock to synchronize calling pieceManager methods from peers (or anywhere else)
 		self.piemLock = threading.Lock()
 
 		# Open .torrent file and decode data
@@ -65,10 +66,13 @@ class torrentManager:
 		# Handle other info received from response
 
 		# Instantiate a peer manager for this torrent file
-		print("Creating peer manager for this torrent")
+		print("Creating peer manager and piece manager for this torrent")
 		self.pieManager = piem.pieceManager(self)
 		self.pManager = pm.peerManager(response['peers'], self)
 
 	# Timer for re-announce
 	def loop(self):
-		pass
+		while(self.shouldLoop):
+			self.pieManager.loop()
+			self.pManager.loop()
+			self.shouldLoop = 0
