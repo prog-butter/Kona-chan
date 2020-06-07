@@ -8,6 +8,7 @@ import threading
 
 import peerManager as pm
 import pieceManager as piem
+import file as f
 
 class torrentManager:
 	def __init__(self, torrentpath):
@@ -16,8 +17,12 @@ class torrentManager:
 		self.infoHash = ""
 		self.pieceHashes = []
 		self.pieceLength = 0
+
+		# List of files in this torrent
+		self.files = []
 		self.length = 0
 		self.name = ""
+
 		self.pieces = ""
 		self.local_peer_id = bytes("-KC0010-" + str(random.randint(100000000000, 999999999999)), 'utf-8')
 		self.shouldLoop = 1
@@ -33,6 +38,7 @@ class torrentManager:
 		if('length' in torrent['info'].keys()):
 			self.length = torrent['info']['length']
 			self.name = torrent['info']['name']
+			self.files.append(f.File("", torrent['info']['name'], torrent['info']['length']))
 			self.pieceLength = torrent['info']['piece length']
 			self.pieces = torrent['info']['pieces']
 			for index in range(0, len(self.pieces), 20):
