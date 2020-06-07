@@ -2,10 +2,12 @@
 import struct
 import bitstring
 import logging
+import colorama
 
 # Globals
 PSTR = b"BitTorrent protocol"
 PSTR_LEN = len(PSTR)
+colorama.init()
 
 # Used to raise wrong message exceptions
 class WrongMessageException(Exception):
@@ -14,31 +16,34 @@ class WrongMessageException(Exception):
 # Class to parse message id and payload of received message and send it to appropriate message parser
 class MessageDispatcher:
     def __init__(self, payload):
+        print("\033[93mStarting message dispatcher.\033[0m")
         self.payload = payload
 
     def dispatch(self):
         try:
             payload_length, message_id = struct.unpack("!IB", self.payload[:5])
+            # print("\033[92mPayload length: {}\033[0m".format(payload_length))
+            print("\033[92mMessage ID: {}\033[0m".format(message_id))
 
         except:
-            logging.exception("Error in unpacking message.")
+            logging.exception("\033[91mError in unpacking message.\033[0m")
             return None
 
         map_id_to_message = {
-            0: "Choke",
-            1: "UnChoke",
-            2: "Interested",
-            3: "NotInterested",
-            4: "Have",
-            5: "BitField",
-            6: "Request",
-            7: "Piece",
-            8: "Cancel",
-            9: "Port"
+            0: Choke,
+            1: UnChoke,
+            2: Interested,
+            3: NotInterested,
+            4: Have,
+            5: BitField,
+            6: Request,
+            7: Piece,
+            8: Cancel,
+            9: Port
         }
 
         if message_id not in list(map_id_to_message.keys()):
-            raise WrongMessageException("Message ID not recognized.")
+            raise WrongMessageException("\033[91mMessage ID not recognized.\033[0m")
 
         return map_id_to_message[message_id].decode(self.payload)
 
@@ -224,22 +229,24 @@ class BitField(Message):
     """
     message_id = 5
 
+    # bitfield is bitstring.BitArray
     def __init__(self, bitfield):
         super(BitField, self).__init__()
         self.bitfield = bitfield
         self.bitfield_as_bytes = bitfield.tobytes()
         self.bitfield_length = len(self.bitfield_as_bytes)
         self.payload_length = 1 + self.bitfield_length
-        self.total_length = 4 +self.payload_length
+        self.total_length = 4 + self.payload_length
 
     def encode(self):
         return struct.pack("!IB{}s".format(self.bitfield_length), self.payload_length, self.message_id, self.bitfield_as_bytes)
 
     @classmethod
     def decode(cls, response):
+        # print("\033[93mIn BitField Message Parser.\033[0m")
         payload_length, message_id = struct.unpack("!IB", response[:5])
         bitfield_length = payload_length - 1
-        raw_bitfield = struct.unpack("!{}s".format(bitfield_length), response[5: 5 + bitfield_length])
+        raw_bitfield, = struct.unpack("!{}s".format(bitfield_length), response[5: 5 + bitfield_length])
         bitfield = bitstring.BitArray(bytes = bytes(raw_bitfield))
         return BitField(bitfield)
 
