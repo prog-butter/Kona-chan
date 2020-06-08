@@ -14,12 +14,12 @@ PSTR = "BitTorrent protocol"
 
 # Peer class representing every peer and it's attributes
 class Peer:
-	def __init__(self, ip, port, torMan, pieMan):
+	def __init__(self, ip, port, torMan):
 		self.ip = ip
 		self.port = int(port)
 		self.sock = None
 		self.isGoodPeer = 0
-		self.pieces = bitstring.BitArray(len(torMan.pieceHashes))
+		self.pieces = bitstring.BitArray(bytes = torMan.pieceLength)
 		self.read_buffer = b''
 		self.running = True
 		self.state = {
@@ -33,8 +33,13 @@ class Peer:
 			"peer_interested": 0
 		}
 
+		# Whether this peer has a piece to download or not
+		self.hasPiece = 0
+
+		self.submittedBitfield = 0
+
 		self.tManager = torMan
-		self.pieManager = pieMan
+		self.pieManager = self.tManager.pieManager
 
 	# Establish TCP connection with peer
 	def connect(self):
@@ -185,7 +190,7 @@ class Peer:
 		# bitfield is of type messages.BitField
 		try:
 			self.pieces = msg.bitfield
-			print("\033[92mBitfield Message: {}\033[0m".format(self.pieces))
+			#print("\033[92mBitfield Message: {}\033[0m".format(self.pieces))
 		except Exception as e:
 			print("\033[91m{}\033[0m".format(e))
 		# If peer is not choking this client and this client is not interested, send peer an interested message
@@ -258,8 +263,33 @@ class Peer:
 			msg = self.get_messages()
 			self.parse_message(msg)
 
-		print("\033[95mFinal Bitstring: {}\033[0m".format(self.pieces.bin))
+		#print("\033[95mFinal Bitstring: {}\033[0m".format(self.pieces.bin))
 		print("\033[95mDone.\033[0m")
+
+		# Submit bitfield once
+		if(self.submittedBitfield == 0):
+			with self.tManager.piemLock:
+				print("-------------------------------------------")
+				print("Submitting bitfield to pieceManager")
+				print("-------------------------------------------")
+				self.pieManager.submitBitfield(self.pieces)
+			self.submittedBitfield = 1
+
+		# Ask for piece to download from pieceManager
+		if(self.hasPiece == 0):
+			with self.tManager.piemLock:
+				self.currentPiece = self.pieManager.getPiece(self.pieces)
+			if(self.currentPiece.isEmpty == 0): #Check if a valid piece was received
+				self.hasPiece = 1
+			else:
+				# pieceQueue is empty, close connection with peer
+				print("Done! Closing thread")
+
+		# Download if peer has a piece
+		if(self.hasPiece):
+			#TO-DO
+			#Send request messages to download piece
+			pass
 
 if __name__ == "__main__":
 	print("Not supposed to run this way!")

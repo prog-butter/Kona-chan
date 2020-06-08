@@ -1,6 +1,7 @@
 import bitstring
 
 class Piece:
-	def __init__(self, index, data):
+	def __init__(self, index, piecelength, isEmpty):
 		self.index = index
-		self.data = data
+		self.data = bitstring.BitArray(bytes = piecelength)
+		self.isEmpty = isEmpty

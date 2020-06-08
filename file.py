@@ -5,4 +5,4 @@ class File:
 		self.filepath = filepath
 		self.name = name
 		self.length = length
-		self.data = bitstring.BitString()
+		self.data = bitstring.BitString(self.length)
