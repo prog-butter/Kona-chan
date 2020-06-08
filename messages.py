@@ -16,7 +16,7 @@ class WrongMessageException(Exception):
 # Class to parse message id and payload of received message and send it to appropriate message parser
 class MessageDispatcher:
     def __init__(self, payload):
-        print("\033[93mStarting message dispatcher.\033[0m")
+        # print("\033[93mStarting message dispatcher.\033[0m")
         self.payload = payload
 
     def dispatch(self):
@@ -106,7 +106,10 @@ class KeepAlive(Message):
 
     @classmethod
     def decode(cls, response):
-        payload_length = struct.unpack("!I", response[1:cls.total_length])
+        payload_length = struct.unpack("!I", response[:cls.total_length])
+        if payload_length != 0:
+            raise WrongMessageException("\033[91mNot a KeepAlive Message\033[0m")
+
         return KeepAlive()
 
 class Choke(Message):

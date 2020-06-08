@@ -38,7 +38,7 @@ class torrentManager:
 		if('length' in torrent['info'].keys()):
 			self.length = torrent['info']['length']
 			self.name = torrent['info']['name']
-			self.files.append(f.File("", torrent['info']['name'], torrent['info']['length']))
+			# self.files.append(f.File("", torrent['info']['name'], torrent['info']['length']))
 			self.pieceLength = torrent['info']['piece length']
 			self.pieces = torrent['info']['pieces']
 			for index in range(0, len(self.pieces), 20):

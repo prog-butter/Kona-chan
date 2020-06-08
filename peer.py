@@ -8,7 +8,7 @@ import bitstring
 
 # Globals
 colorama.init()
-DEFAULT_TIMEOUT_VALUE = 3
+DEFAULT_TIMEOUT_VALUE = 5
 PSTRLEN = 19
 PSTR = "BitTorrent protocol"
 
@@ -19,12 +19,17 @@ class Peer:
 		self.port = int(port)
 		self.sock = None
 		self.isGoodPeer = 0
-		self.pieces = ""
+		self.pieces = bitstring.BitArray(len(torMan.pieceHashes))
 		self.read_buffer = b''
+		self.running = True
 		self.state = {
+			# This client is choking the peer
 			"am_choking": 1,
+			# This client is interested in the peer
 			"am_interested": 0,
+			# Peer is choking this client
 			"peer_choking": 1,
+			# Peer is interested in this client
 			"peer_interested": 0
 		}
 
@@ -108,10 +113,91 @@ class Peer:
 			self.sock.close()
 			return -1
 
+	# Returns true if message is keepAlive, False otherwise
+	def check_for_keepAlive(self):
+		print("\033[93mChecking for KeepAlive\033[0m")
+		try:
+			keep_alive = messages.KeepAlive.decode(self.read_buffer)
+		except messages.WrongMessageException:
+			return False
+		except Exception as e:
+			print("\033[91m{}\033[0m".format(e))
+
+		self.read_buffer = self.read_buffer[keep_alive.total_length:]
+		return True
+
+	# Is this client choking the peer?
+	def am_choking(self):
+		return self.state['am_choking']
+
+	# Is this client unchoking the peer?
+	def am_unchoking(self):
+		return not self.am_choking()
+
+	# Is peer choking this client?
+	def is_choking(self):
+		return self.state['peer_choking']
+
+	# Is this client unchoked?
+	def is_unchoked(self):
+		return not self.is_choking()
+
+	# Is the peer interested in this client?
+	def is_interested(self):
+		return self.state['peer_interested']
+
+	# Is this client interested?
+	def am_interested(self):
+		return self.state['am_interested']
+
+	# Peer is choking this client
+	def set_choke(self):
+		self.state['peer_choking'] = True
+
+	# Peer has unchoked this client
+	def set_unchoke(self):
+		self.state['peer_choking'] = False
+
+	# Peer is interested in this client
+	def set_interested(self):
+		self.state['peer_interested'] = True
+		# If this client is choking the peer, first unchoke the peer and send him an unchoke message
+		if self.am_choking():
+			unchoke = messages.UnChoke().encode()
+			self.send_msg(unchoke)
+
+	# Peer is not interested in this client
+	def set_not_interested(self):
+		self.state['peer_interested'] = False
+
+	# If peer sends a have message, set the corresponding piece to be true in the self.pieces BitArray
+	def handle_have(self, msg):
+		self.pieces[msg.piece_index] = True
+		print("\033[92mCurrent bitfield: {}\033[0m".format(self.pieces))
+		# If peer is not choking this client and this client is not interested, send peer an interested message
+		if self.is_choking() and not self.state['am_interested']:
+			interested = messages.Interested().encode()
+			self.send_msg(interested)
+			self.state['am_interested'] = True
+
+	# Set pieces if client receives a bitfield message
+	def handle_bitfield(self, msg):
+		# bitfield is of type messages.BitField
+		try:
+			self.pieces = msg.bitfield
+			print("\033[92mBitfield Message: {}\033[0m".format(self.pieces))
+		except Exception as e:
+			print("\033[91m{}\033[0m".format(e))
+		# If peer is not choking this client and this client is not interested, send peer an interested message
+		if self.is_choking() and not self.state['am_interested']:
+			interested = messages.Interested().encode()
+			self.send_msg(interested)
+			self.state['am_interested'] = True
+
 	# Gets messages from read_buffer
 	def get_messages(self):
-		# If the peer is a good peer
-		if self.isGoodPeer:
+		# If the peer is a good peer and message is not a keepAlive message
+		if self.isGoodPeer and not self.check_for_keepAlive():
 			# Get payload length from the first 4 bytes of the read buffer
 			payload_length, = struct.unpack("!I", self.read_buffer[:4])
 			# print("\033[92mPayload Length: {}\033[0m".format(payload_length))
@@ -131,6 +217,35 @@ class Peer:
 			m = messages.MessageDispatcher(payload).dispatch()
 			return m
 
+	# Function to check if the received messages obj is an instance of one of the 9 possible message types
+	def parse_message(self, msg: messages.Message):
+		if isinstance(msg, messages.Choke):
+			print("\033[96mFound Choke Message\033[0m")
+			self.set_choke()
+
+		elif isinstance(msg, messages.UnChoke):
+			print("\033[96mFound UnChoke Message\033[0m")
+			self.set_unchoke()
+
+		elif isinstance(msg, messages.Interested):
+			print("\033[96mFound Interested Message\033[0m")
+			self.set_interested()
+
+		elif isinstance(msg, messages.NotInterested):
+			print("\033[96mFound NotInterested Message\033[0m")
+			self.set_not_interested()
+
+		elif isinstance(msg, messages.Have):
+			print("\033[96mFound Have Message\033[0m")
+			self.handle_have(msg)
+
+		elif isinstance(msg, messages.BitField):
+			print("\033[96mFound Bitfield Message\033[0m")
+			self.handle_bitfield(msg)
+
+		else:
+			logging.error("\033[91mMessage not recognized.\033[0m")
+
 	# Main loop
 	def mainLoop(self):
 		# Connect to peer and handshake, close connection and thread otherwise
@@ -141,24 +256,9 @@ class Peer:
 		while len(self.read_buffer) > 4:
 			self.read_buffer += self.read_from_socket()
 			msg = self.get_messages()
+			self.parse_message(msg)
 
-			if msg.message_id == 5:
-				# Append bitstring to self.pieces
-				self.pieces += msg.bitfield.bin
-				print("\033[92mBitstring message of length: {}\033[0m".format(len(msg.bitfield.bin)))
-
-			elif msg.message_id == 4:
-				print("\033[92mHave piece index: {}\033[0m".format(msg.piece_index))
-				# Convert existing bitstring to list
-				pieceList = list(self.pieces)
-				# Update corresponding piece_index to 1
-				pieceList[msg.piece_index] = 1
-				# Convert back to string and update self.pieces
-				self.pieces = "".join(pieceList)
-
-			print("Length of read_buffer: \033[93m{}\033[0m".format(len(self.read_buffer)))
-
-		print("\033[95mFinal Bitstring Length: {}\033[0m".format(len(self.pieces)))
+		print("\033[95mFinal Bitstring: {}\033[0m".format(self.pieces.bin))
 		print("\033[95mDone.\033[0m")
 
 if __name__ == "__main__":

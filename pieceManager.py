@@ -33,6 +33,7 @@ class pieceManager:
 		# Check download piece with hash
 		m = hashlib.sha1(piece.data)
 		if(self.tManager.pieceHashes[piece.index] is m.digest()):
+			print("Do shit")
 			# TO-DO
 			# Write piece to disk
 
