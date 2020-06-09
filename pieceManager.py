@@ -14,10 +14,14 @@ class pieceManager:
 			self.pieceFreq[i] = 0
 
 		self.pieceQueue = []
-		self.createdInitialQueue = 0
+		self.createdQueue = 0
+
 	"""
 	All methods get called by peers
 	"""
+	# Get Have messages from peer
+	def submitHaveMessage(self, index):
+		self.pieceFreq[index] += 1
 
 	# Get bitfield from peers
 	def submitBitfield(self, bitfield):
@@ -64,33 +68,33 @@ class pieceManager:
 		print("pieceManager loop")
 		# TO-DO
 		# Form initial work queue: Add all pieces to queue (Run once)
-		if(self.createdInitialQueue == 0):
+		# if(self.createdInitialQueue == 0):
 			# Wait for sometime to receive bitfield messages
-			time.sleep(20)
-			print("pieceFreq:")
-			with self.tManager.piemLock:
-				print(self.pieceFreq)
-				# Get piece indexes that is not available with any peer (needs to be placed at end of work queue)
-				unavailablePieceIndexes = []
-				for key in self.pieceFreq:
-					if(self.pieceFreq[key] == 0):
-						unavailablePieceIndexes.append(key)
-				#tempPieceFreq = {k: v for k, v in sorted(self.pieceFreq.items(), key=lambda item: item[1])}
-				sortedKeys = list({k: v for k, v in sorted(self.pieceFreq.items(), key=lambda item: item[1])}.keys())
+		time.sleep(20)
+		print("pieceFreq:")
+		with self.tManager.piemLock:
+			print(self.pieceFreq)
+			# Get piece indexes that is not available with any peer (needs to be placed at end of work queue)
+			unavailablePieceIndexes = []
+			for key in self.pieceFreq:
+				if(self.pieceFreq[key] == 0):
+					unavailablePieceIndexes.append(key)
+			#tempPieceFreq = {k: v for k, v in sorted(self.pieceFreq.items(), key=lambda item: item[1])}
+			sortedKeys = list({k: v for k, v in sorted(self.pieceFreq.items(), key=lambda item: item[1])}.keys())
 
-				self.pieceQueue = []
-				# Loop through sortedKeys (sorted in increasing order of piece freq)
-				for ind in sortedKeys:
-					if(ind not in unavailablePieceIndexes):
-						self.pieceQueue.append(p.Piece(ind, self.tManager.pieceLength, 0))
-
-				# Add remaining piece indexes
-				for ind in unavailablePieceIndexes:
+			self.pieceQueue = []
+			# Loop through sortedKeys (sorted in increasing order of piece freq)
+			for ind in sortedKeys:
+				if(ind not in unavailablePieceIndexes):
 					self.pieceQueue.append(p.Piece(ind, self.tManager.pieceLength, 0))
 
-				#self.createdInitialQueue = 1
-				print("pieceQueue")
-				for pie in self.pieceQueue:
-					print(pie.index, end=", ")
+			# Add remaining piece indexes
+			for ind in unavailablePieceIndexes:
+				self.pieceQueue.append(p.Piece(ind, self.tManager.pieceLength, 0))
 
-				print("")
+			self.createdQueue = 1
+			print("pieceQueue")
+			for pie in self.pieceQueue:
+				print(pie.index, end=", ")
+
+			print("")

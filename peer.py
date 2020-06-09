@@ -8,7 +8,7 @@ import bitstring
 
 # Globals
 colorama.init()
-DEFAULT_TIMEOUT_VALUE = 5
+DEFAULT_TIMEOUT_VALUE = 3
 PSTRLEN = 19
 PSTR = "BitTorrent protocol"
 
@@ -19,7 +19,7 @@ class Peer:
 		self.port = int(port)
 		self.sock = None
 		self.isGoodPeer = 0
-		self.pieces = bitstring.BitArray(bytes = torMan.pieceLength)
+		self.pieces = bitstring.BitArray(len(torMan.pieceHashes))
 		self.read_buffer = b''
 		self.running = True
 		self.state = {
@@ -35,9 +35,9 @@ class Peer:
 
 		# Whether this peer has a piece to download or not
 		self.hasPiece = 0
-
-		self.submittedBitfield = 0
-
+		self.currentPiece = 0
+		# self.currentBlockOffset = -1
+		self.blocks_downloaded = 0
 		self.tManager = torMan
 		self.pieManager = self.tManager.pieManager
 
@@ -113,6 +113,8 @@ class Peer:
 			# Set isGoodPeer = 1 indicating completion of handshake
 			self.isGoodPeer = 1
 
+			self.send_interested()
+
 		except Exception:
 			logging.exception("\033[91mError sending or receiving Handshake message.\033[0m")
 			self.sock.close()
@@ -162,6 +164,7 @@ class Peer:
 	# Peer has unchoked this client
 	def set_unchoke(self):
 		self.state['peer_choking'] = False
+		# self.send_interested()
 
 	# Peer is interested in this client
 	def set_interested(self):
@@ -175,15 +178,24 @@ class Peer:
 	def set_not_interested(self):
 		self.state['peer_interested'] = False
 
+	# Send interested message to peer
+	def send_interested(self):
+		interested = messages.Interested().encode()
+		print("\033[93mSending Interested Message to Peer IP: {}, Port: {}\033[93m".format(self.ip, self.port))
+		self.send_msg(interested)
+		self.state['am_interested'] = True
+
 	# If peer sends a have message, set the corresponding piece to be true in the self.pieces BitArray
 	def handle_have(self, msg):
 		self.pieces[msg.piece_index] = True
 		print("\033[92mCurrent bitfield: {}\033[0m".format(self.pieces))
 		# If peer is not choking this client and this client is not interested, send peer an interested message
-		if self.is_choking() and not self.state['am_interested']:
-			interested = messages.Interested().encode()
-			self.send_msg(interested)
-			self.state['am_interested'] = True
+		# if self.is_choking():
+		# 	self.send_interested()
+
+		# Send parsed have message to pieceManager
+		with self.tManager.piemLock:
+			self.pieManager.submitHaveMessage(msg.piece_index)
 
 	# Set pieces if client receives a bitfield message
 	def handle_bitfield(self, msg):
@@ -199,6 +211,29 @@ class Peer:
 			self.send_msg(interested)
 			self.state['am_interested'] = True
 
+		# Submit bitfield to pieceManager
+		with self.tManager.piemLock:
+			print("\033[93mSending bitfield to Piece Manager\033[0m")
+			self.pieManager.submitBitfield(self.pieces)
+
+	# If client is unchoked and interested, request message is sent
+	def send_request(self, block_offset):
+		# self.currentBlockOffset = block_offset
+		print("\033[93mSending Request Message [{}, {}] to Peer IP: {}, Port: {}\033[93m".format(self.currentPiece.index, block_offset, self.ip, self.port))
+		if self.is_interested() and self.is_unchoked():
+			request = messages.Request(self.currentPiece.index, block_offset, self.currentPiece.block_size).encode()
+			self.send_msg(request)
+
+	# Receive a piece
+	def handle_piece(self, msg):
+		# If received piece has matching piece_index and block_offset values, download it
+		if msg.piece_index == self.currentPiece.index:
+			self.currentPiece.datalist[block_offset] = msg.block
+			print("\033[95mData so far: {}\033[0m".format(self.currentPiece.final_data))
+			# Set that block as downloaded, increment downloaded blocks counter by 1, set hasPiece to 0 to receive new piece
+			self.currentPiece.blocks[block_offset] = 1
+			self.blocks_downloaded += 1
+
 	# Gets messages from read_buffer
 	def get_messages(self):
 		# If the peer is a good peer and message is not a keepAlive message
@@ -207,11 +242,6 @@ class Peer:
 			payload_length, = struct.unpack("!I", self.read_buffer[:4])
 			# print("\033[92mPayload Length: {}\033[0m".format(payload_length))
 			total_length = payload_length + 4
-
-			# # If message in buffer is less than total length of expected message, break
-			# if len(self.read_buffer) < total_length:
-			# 	return
-			# else:
 			# Read message till total length and update read buffer to resume from end of last message
 			payload = self.read_buffer[:total_length]
 			# print("Raw Payload: {}".format(payload))
@@ -225,31 +255,43 @@ class Peer:
 	# Function to check if the received messages obj is an instance of one of the 9 possible message types
 	def parse_message(self, msg: messages.Message):
 		if isinstance(msg, messages.Choke):
-			print("\033[96mFound Choke Message\033[0m")
+			print("\033[96mFound Choke Message [IP: {}, Port: {}]\033[0m".format(self.ip, self.port))
 			self.set_choke()
 
 		elif isinstance(msg, messages.UnChoke):
-			print("\033[96mFound UnChoke Message\033[0m")
+			print("\033[95mFound UnChoke Message [IP: {}, Port: {}]\033[0m".format(self.ip, self.port))
 			self.set_unchoke()
 
 		elif isinstance(msg, messages.Interested):
-			print("\033[96mFound Interested Message\033[0m")
+			print("\033[96mFound Interested Message [IP: {}, Port: {}]\033[0m".format(self.ip, self.port))
 			self.set_interested()
 
 		elif isinstance(msg, messages.NotInterested):
-			print("\033[96mFound NotInterested Message\033[0m")
+			print("\033[96mFound NotInterested Message [IP: {}, Port: {}]\033[0m".format(self.ip, self.port))
 			self.set_not_interested()
 
 		elif isinstance(msg, messages.Have):
-			print("\033[96mFound Have Message\033[0m")
+			print("\033[96mFound Have Message [IP: {}, Port: {}]\033[0m".format(self.ip, self.port))
 			self.handle_have(msg)
 
 		elif isinstance(msg, messages.BitField):
-			print("\033[96mFound Bitfield Message\033[0m")
+			print("\033[96mFound Bitfield Message [IP: {}, Port: {}]\033[0m".format(self.ip, self.port))
 			self.handle_bitfield(msg)
+
+		elif isinstance(msg, messages.Piece):
+			print("\033[94mFound Piece Message [IP: {}, Port: {}]\033[0m".format(self.ip, self.port))
+			self.handle_piece(msg)
 
 		else:
 			logging.error("\033[91mMessage not recognized.\033[0m")
+		# elif isinstance(msg, messages.Request):
+		# 	print("\033[96mFound Request Message [IP: {}, Port: {}]\033[0m".format(self.ip, self.port))
+		# 	self.handle_request(msg)
+		#
+		# elif isinstance(msg, messages.Cancel):
+		# 	print("\033[96mFound Cancel Message [IP: {}, Port: {}]\033[0m".format(self.ip, self.port))
+		# 	self.handle_cancel(msg)
+
 
 	# Main loop
 	def mainLoop(self):
@@ -258,38 +300,38 @@ class Peer:
 			print("\033[91mThread Closed.\033[0m")
 			return
 
-		while len(self.read_buffer) > 4:
-			self.read_buffer += self.read_from_socket()
-			msg = self.get_messages()
-			self.parse_message(msg)
+		while self.running:
+			while len(self.read_buffer) > 4:
+				self.read_buffer += self.read_from_socket()
+				msg = self.get_messages()
+				self.parse_message(msg)
 
-		#print("\033[95mFinal Bitstring: {}\033[0m".format(self.pieces.bin))
-		print("\033[95mDone.\033[0m")
+			if not self.state['peer_choking']:
+				# Ask for piece to download from pieceManager
+				if(self.hasPiece == 0):
+					with self.tManager.piemLock:
+						self.currentPiece = self.pieManager.getPiece(self.pieces)
+					if(self.currentPiece.isEmpty == 0): #Check if a valid piece was received
+						self.hasPiece = 1
+					elif (self.pieManager.createdQueue):
+						# pieceQueue is empty, close connection with peer
+						print("\033[95mDone! Closing thread\033[0m")
+						self.running = False
+						self.sock.close()
+						return
 
-		# Submit bitfield once
-		if(self.submittedBitfield == 0):
-			with self.tManager.piemLock:
-				print("-------------------------------------------")
-				print("Submitting bitfield to pieceManager")
-				print("-------------------------------------------")
-				self.pieManager.submitBitfield(self.pieces)
-			self.submittedBitfield = 1
+				# Download if peer has a piece
+				if(self.hasPiece):
+					# If all blocks have been downloaded
+					if self.blocks_downloaded == self.currentPiece.number_of_blocks:
+						self.hasPiece = 0
+						continue
 
-		# Ask for piece to download from pieceManager
-		if(self.hasPiece == 0):
-			with self.tManager.piemLock:
-				self.currentPiece = self.pieManager.getPiece(self.pieces)
-			if(self.currentPiece.isEmpty == 0): #Check if a valid piece was received
-				self.hasPiece = 1
-			else:
-				# pieceQueue is empty, close connection with peer
-				print("Done! Closing thread")
-
-		# Download if peer has a piece
-		if(self.hasPiece):
-			#TO-DO
-			#Send request messages to download piece
-			pass
+					#Send request messages to download piece
+					for i in range(len(self.currentPiece.blocks)):
+						if self.currentPiece.blocks[i] != 1:
+							self.send_request(i)
+							# time.sleep(0.2)
 
 if __name__ == "__main__":
 	print("Not supposed to run this way!")
