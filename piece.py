@@ -11,4 +11,11 @@ class Piece:
 		self.blocks = [0 for i in range(self.number_of_blocks)]
 		self.isEmpty = isEmpty
 
-		self.final_data = bytearray(self.datalist)
+	def makePiece(self, block_offset, block_data):
+		self.datalist[block_offset] = block_data
+
+	def complete_piece(self):
+		final_data = b''
+		final_data.join(self.datalist)
+
+		return final_data

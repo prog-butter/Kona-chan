@@ -27,6 +27,7 @@ class MessageDispatcher:
 
         except:
             logging.exception("\033[91mError in unpacking message.\033[0m")
+            # print("Payload: {}".format(self.payload))
             return None
 
         map_id_to_message = {
@@ -106,6 +107,7 @@ class KeepAlive(Message):
 
     @classmethod
     def decode(cls, response):
+        # print("Response: {}".format(response))
         payload_length = struct.unpack("!I", response[:cls.total_length])
         if payload_length != 0:
             raise WrongMessageException("\033[91mNot a KeepAlive Message\033[0m")
@@ -171,6 +173,7 @@ class Interested(Message):
         super(Interested, self).__init__()
 
     def encode(self):
+        # print("\033[92mIn Message Dispatcher - Interested Message\033[0m")
         return struct.pack("!IB", self.payload_length, self.message_id)
 
     @classmethod
@@ -273,7 +276,8 @@ class Request(Message):
         self.block_length = block_length
 
     def encode(self):
-        return struct.pack("!IBIII", self.payload_length, self.message_id, self.piece_index, self.block_length)
+        # print("\033[92mIn Message Dispatcher - Request Message\033[0m")
+        return struct.pack("!IBIII", self.payload_length, self.message_id, self.piece_index, self.block_offset, self.block_length)
 
     @classmethod
     def decode(cls, response):

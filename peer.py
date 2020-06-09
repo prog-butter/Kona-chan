@@ -18,7 +18,7 @@ class Peer:
 		self.ip = ip
 		self.port = int(port)
 		self.sock = None
-		self.isGoodPeer = 0
+		self.isGoodPeer = 1
 		self.pieces = bitstring.BitArray(len(torMan.pieceHashes))
 		self.read_buffer = b''
 		self.running = True
@@ -40,15 +40,19 @@ class Peer:
 		self.blocks_downloaded = 0
 		self.tManager = torMan
 		self.pieManager = self.tManager.pieManager
+		self.sentRequest = 0
+		self.pipeline = []
 
 		#Status
 		self.currentStatus = "None"
 		self.previousStatus = "None"
+		self.ppStatus = "None"
 
 		self.changeStatus("I am born!")
 
 	#Change Status
 	def changeStatus(self, newStatus):
+		self.ppStatus = self.previousStatus
 		self.previousStatus = self.currentStatus
 		self.currentStatus = newStatus
 
@@ -61,13 +65,15 @@ class Peer:
 
 		except socket.timeout:
 			#print("\033[31mSocket timed out!\033[39m")
-			self.changeStatus("\033[31mSocket timed out!\033[39m")
+			self.isGoodPeer = 0
+			self.changeStatus("\033[31mSocket timed out!\033[0m")
 			self.sock.close()
 			return -1
 
 		except socket.error:
 			#print("\033[31mConnection error!\033[39m")
-			self.changeStatus("\033[31mConnection error!\033[39m")
+			self.isGoodPeer = 0
+			self.changeStatus("\033[31mConnection error!\033[0m")
 			self.sock.close()
 			return -1
 
@@ -77,7 +83,9 @@ class Peer:
 			self.sock.send(msg)
 
 		except Exception as e:
-			logging.error("\033[91mFailed to send message!\033[0m")
+			self.running = False
+			self.changeStatus("\033[91mFailed to send message!\033[0m")
+			print(e)
 
 	# Reads from socket and returns the received data in bytes form
 	def read_from_socket(self):
@@ -131,9 +139,11 @@ class Peer:
 			self.isGoodPeer = 1
 
 			self.send_interested()
+			self.send_unchoke()
 
 		except Exception:
-			logging.exception("\033[91mError sending or receiving Handshake message.\033[0m")
+			self.isGoodPeer = 0
+			print("\033[91mError sending or receiving Handshake message.\033[0m")
 			self.sock.close()
 			return -1
 
@@ -142,23 +152,26 @@ class Peer:
 		#print("\033[93mChecking for KeepAlive\033[0m")
 		self.changeStatus("\033[93mChecking for KeepAlive\033[0m")
 		try:
+			# print("Read Buffer: {}".format(self.read_buffer))
 			keep_alive = messages.KeepAlive.decode(self.read_buffer)
 		except messages.WrongMessageException:
+			self.changeStatus("\033[91mNot a keepAlive message\033[0m")
 			return False
 		except Exception as e:
 			#print("\033[91m{}\033[0m".format(e))
 			self.changeStatus("\033[91m{}\033[0m".format(e))
 
 		self.read_buffer = self.read_buffer[keep_alive.total_length:]
+		self.changeStatus("\033[92mIs a keepAlive message\033[0m")
 		return True
 
-	# Is this client choking the peer?
-	def am_choking(self):
-		return self.state['am_choking']
+	# # Is this client choking the peer?
+	# def am_choking(self):
+	# 	return self.state['am_choking']
 
-	# Is this client unchoking the peer?
-	def am_unchoking(self):
-		return not self.am_choking()
+	# # Is this client unchoking the peer?
+	# def am_unchoking(self):
+	# 	return not self.am_choking()
 
 	# Is peer choking this client?
 	def is_choking(self):
@@ -168,9 +181,9 @@ class Peer:
 	def is_unchoked(self):
 		return not self.is_choking()
 
-	# Is the peer interested in this client?
-	def is_interested(self):
-		return self.state['peer_interested']
+	# # Is the peer interested in this client?
+	# def is_interested(self):
+	# 	return self.state['peer_interested']
 
 	# Is this client interested?
 	def am_interested(self):
@@ -185,25 +198,34 @@ class Peer:
 		self.state['peer_choking'] = False
 		# self.send_interested()
 
-	# Peer is interested in this client
-	def set_interested(self):
-		self.state['peer_interested'] = True
-		# If this client is choking the peer, first unchoke the peer and send him an unchoke message
-		if self.am_choking():
-			unchoke = messages.UnChoke().encode()
-			self.send_msg(unchoke)
+	# # Peer is interested in this client
+	# def set_interested(self):
+	# 	self.state['peer_interested'] = True
+	# 	# If this client is choking the peer, first unchoke the peer and send him an unchoke message
+	# 	if self.am_choking():
+	# 		unchoke = messages.UnChoke().encode()
+	# 		self.send_msg(unchoke)
 
-	# Peer is not interested in this client
-	def set_not_interested(self):
-		self.state['peer_interested'] = False
+	# # Peer is not interested in this client
+	# def set_not_interested(self):
+	# 	self.state['peer_interested'] = False
 
 	# Send interested message to peer
 	def send_interested(self):
 		interested = messages.Interested().encode()
-		#print("\033[93mSending Interested Message to Peer IP: {}, Port: {}\033[93m".format(self.ip, self.port))
-		self.changeStatus("\033[93mSending Interested Message to Peer IP: {}, Port: {}\033[93m".format(self.ip, self.port))
+		#print("\033[93mSending Interested Message to Peer IP: {}, Port: {}\033[0m".format(self.ip, self.port))
+		self.changeStatus("\033[93mSending Interested Message to Peer\033[0m")
 		self.send_msg(interested)
 		self.state['am_interested'] = True
+
+	def send_unchoke(self):
+		try:
+			self.changeStatus("\033[95mSending Unchoke Message to Peer\033[0m")
+			unchoke = messages.UnChoke().encode()
+			self.send_msg(unchoke)
+			self.state['am_choking'] = False
+		except Exception as e:
+			print("\033[91m{}\033[0m".format(e))
 
 	# If peer sends a have message, set the corresponding piece to be true in the self.pieces BitArray
 	def handle_have(self, msg):
@@ -227,10 +249,10 @@ class Peer:
 			#print("\033[91m{}\033[0m".format(e))
 			self.changeStatus("\033[91m{}\033[0m".format(e))
 		# If peer is not choking this client and this client is not interested, send peer an interested message
-		if self.is_choking() and not self.state['am_interested']:
-			interested = messages.Interested().encode()
-			self.send_msg(interested)
-			self.state['am_interested'] = True
+		# if self.is_choking() and not self.state['am_interested']:
+		# 	interested = messages.Interested().encode()
+		# 	self.send_msg(interested)
+		# 	self.state['am_interested'] = True
 
 		# Submit bitfield to pieceManager
 		with self.tManager.piemLock:
@@ -240,22 +262,31 @@ class Peer:
 
 	# If client is unchoked and interested, request message is sent
 	def send_request(self, block_offset):
-		# self.currentBlockOffset = block_offset
-		#print("\033[93mSending Request Message [{}, {}] to Peer IP: {}, Port: {}\033[93m".format(self.currentPiece.index, block_offset, self.ip, self.port))
-		self.changeStatus("\033[93mSending Request Message [{}, {}] to Peer IP: {}, Port: {}\033[93m".format(self.currentPiece.index, block_offset, self.ip, self.port))
-		if self.is_interested() and self.is_unchoked():
-			request = messages.Request(self.currentPiece.index, block_offset, self.currentPiece.block_size).encode()
-			self.send_msg(request)
+		try:
+			# self.currentBlockOffset = block_offset
+			# print("\033[92mChoking: {}, Interested: {}\033[0m".format(self.state['peer_choking'], self.state['am_interested']))
+			#print("\033[93mSending Request Message [{}, {}] to Peer IP: {}, Port: {}\033[0m".format(self.currentPiece.index, block_offset, self.ip, self.port))
+			if self.am_interested() and self.is_unchoked():
+				self.changeStatus("\033[93mSending Request Message [{}, {}] to Peer IP: {}, Port: {}\033[0m".format(self.currentPiece.index, block_offset, self.ip, self.port))
+				request = messages.Request(self.currentPiece.index, block_offset, self.currentPiece.block_size).encode()
+				self.send_msg(request)
+
+		except Exception as e:
+			print("\033[91m{}\033[0m".format(e))
 
 	# Receive a piece
 	def handle_piece(self, msg):
-		# If received piece has matching piece_index and block_offset values, download it
-		if msg.piece_index == self.currentPiece.index:
-			self.currentPiece.datalist[block_offset] = msg.block
-			#print("\033[95mData so far: {}\033[0m".format(self.currentPiece.final_data))
-			# Set that block as downloaded, increment downloaded blocks counter by 1, set hasPiece to 0 to receive new piece
-			self.currentPiece.blocks[block_offset] = 1
-			self.blocks_downloaded += 1
+		try:
+			# If received piece has matching piece_index and block_offset values, download it
+			if msg.piece_index == self.currentPiece.index:
+				self.currentPiece.makePiece(msg.block_offset, msg.block)
+				self.changeStatus("Making piece [{}, {}]".format(msg.piece_index, msg.block_offset))
+				#print("\033[95mData so far: {}\033[0m".format(self.currentPiece.final_data))
+				# Set that block as downloaded, increment downloaded blocks counter by 1, set hasPiece to 0 to receive new piece
+				self.currentPiece.blocks[msg.block_offset] = 1
+				self.blocks_downloaded += 1
+		except Exception as e:
+			print("\033[91m{}\033[0m".format(e))
 
 	# Gets messages from read_buffer
 	def get_messages(self):
@@ -279,37 +310,37 @@ class Peer:
 	def parse_message(self, msg: messages.Message):
 		if isinstance(msg, messages.Choke):
 			#print("\033[96mFound Choke Message [IP: {}, Port: {}]\033[0m".format(self.ip, self.port))
-			self.changeStatus("\033[96mFound Choke Message [IP: {}, Port: {}]\033[0m".format(self.ip, self.port))
+			self.changeStatus("\033[31mFound Choke Message\033[0m")
 			self.set_choke()
 
 		elif isinstance(msg, messages.UnChoke):
 			#print("\033[95mFound UnChoke Message [IP: {}, Port: {}]\033[0m".format(self.ip, self.port))
-			self.changeStatus("\033[95mFound UnChoke Message [IP: {}, Port: {}]\033[0m".format(self.ip, self.port))
+			self.changeStatus("\033[95mFound UnChoke Message\033[0m")
 			self.set_unchoke()
 
 		elif isinstance(msg, messages.Interested):
 			#print("\033[96mFound Interested Message [IP: {}, Port: {}]\033[0m".format(self.ip, self.port))
-			self.changeStatus("\033[96mFound Interested Message [IP: {}, Port: {}]\033[0m".format(self.ip, self.port))
+			self.changeStatus("\033[96mFound Interested Message\033[0m")
 			self.set_interested()
 
 		elif isinstance(msg, messages.NotInterested):
 			#print("\033[96mFound NotInterested Message [IP: {}, Port: {}]\033[0m".format(self.ip, self.port))
-			self.changeStatus("\033[96mFound NotInterested Message [IP: {}, Port: {}]\033[0m".format(self.ip, self.port))
+			self.changeStatus("\033[96mFound NotInterested Message\033[0m")
 			self.set_not_interested()
 
 		elif isinstance(msg, messages.Have):
 			#print("\033[96mFound Have Message [IP: {}, Port: {}]\033[0m".format(self.ip, self.port))
-			self.changeStatus("\033[96mFound Have Message [IP: {}, Port: {}]\033[0m".format(self.ip, self.port))
+			self.changeStatus("\033[96mFound Have Message\033[0m")
 			self.handle_have(msg)
 
 		elif isinstance(msg, messages.BitField):
 			#print("\033[96mFound Bitfield Message [IP: {}, Port: {}]\033[0m".format(self.ip, self.port))
-			self.changeStatus("\033[96mFound Bitfield Message [IP: {}, Port: {}]\033[0m".format(self.ip, self.port))
+			self.changeStatus("\033[96mFound Bitfield Message\033[0m")
 			self.handle_bitfield(msg)
 
 		elif isinstance(msg, messages.Piece):
 			#print("\033[94mFound Piece Message [IP: {}, Port: {}]\033[0m".format(self.ip, self.port))
-			self.changeStatus("\033[94mFound Piece Message [IP: {}, Port: {}]\033[0m".format(self.ip, self.port))
+			self.changeStatus("\033[94mFound Piece Message [{}, {}]\033[0m".format(msg.piece_index, msg.block_offset))
 			self.handle_piece(msg)
 
 		else:
@@ -332,11 +363,15 @@ class Peer:
 			return
 
 		while self.running:
+			self.changeStatus("\033[92mAlive! ({})\033[0m".format(self.hasPiece))
+			# WOW
+			self.read_buffer += self.read_from_socket()
 			while len(self.read_buffer) > 4:
 				self.changeStatus("Reading messages from buffer")
 				self.read_buffer += self.read_from_socket()
 				msg = self.get_messages()
 				self.parse_message(msg)
+				# self.sentRequest = 0
 
 			if not self.state['peer_choking']:
 				# Ask for piece to download from pieceManager
@@ -346,7 +381,7 @@ class Peer:
 						self.currentPiece = self.pieManager.getPiece(self.pieces)
 					if(self.currentPiece.isEmpty == 0): #Check if a valid piece was received
 						self.hasPiece = 1
-						self.changeStatus("Received piece index [{}]".format(self.currentPiece.index))
+						self.changeStatus("Received piece index [{}] from pieceManager".format(self.currentPiece.index))
 					elif (self.pieManager.createdQueue):
 						# pieceQueue is empty, close connection with peer
 						#print("\033[95mDone! Closing thread\033[0m")
@@ -358,15 +393,28 @@ class Peer:
 				# Download if peer has a piece
 				if(self.hasPiece):
 					# If all blocks have been downloaded
+					# print("\033[92mInside hasPiece if\033[0m")
 					if self.blocks_downloaded == self.currentPiece.number_of_blocks:
+						with self.tManager.piemLock:
+							self.changeStatus("\033[92mSubmitting piece index: [{}]\033[0m".format(self.currentPiece.index))
+							self.pieManager.submitPiece(self.currentPiece)
+							self.blocks_downloaded = 0
 						self.hasPiece = 0
 						continue
 
 					#Send request messages to download piece
+					# if self.sentRequest == 0:
 					for i in range(len(self.currentPiece.blocks)):
 						if self.currentPiece.blocks[i] != 1:
 							self.send_request(i)
-							# time.sleep(0.2)
+						# self.sentRequest = 1
+					# for i in range(len(self.currentPiece.blocks)):
+					# 	if self.currentPiece.blocks[i] != 1:
+					# 		self.send_request(i)
+					# 		time.sleep(0.2)
+
+			else:
+				self.changeStatus("\033[91mBeing Choked.\033[0m")
 
 if __name__ == "__main__":
 	print("Not supposed to run this way!")

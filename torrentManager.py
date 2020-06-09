@@ -81,7 +81,7 @@ class torrentManager:
 	# Timer for re-announce
 	def loop(self):
 		while(self.shouldLoop):
-			_=os.system("cls")
+			# _=os.system("clear")
 			self.pieManager.loop()
 			self.pManager.loop()
 			time.sleep(2)

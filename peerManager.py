@@ -56,6 +56,16 @@ class peerManager:
 		# print("All peer threads finished")
 
 	def loop(self):
+		peerlist2 = []
+		for peer in self.peerList:
+			if peer.isGoodPeer == 1:
+				peerlist2.append(peer)
+
+		self.peerList = peerlist2
+		
 		print("PEER STATUS")
 		for peer in self.peerList:
-			print("{}:{}:[{}][{}]".format(peer.ip, peer.port, peer.currentStatus, peer.previousStatus))
+			print("{}:{}:[{}][{}][{}]".format(peer.ip, peer.port, peer.ppStatus, peer.previousStatus, peer.currentStatus))
+			peer.ppStatus = ""
+			peer.previousStatus = ""
+			peer.currentStatus = ""
