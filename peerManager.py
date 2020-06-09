@@ -2,6 +2,7 @@ import struct
 import socket
 import concurrent.futures
 import colorama
+import os
 
 import peer as p
 
@@ -14,7 +15,7 @@ class peerManager:
 	def __init__(self, peers, torMan):
 		colorama.init()
 		self.peerList = [] # Complete peer list
-		self.goodPeerList = [] # Peers with which handshake was completed successfully
+		#self.goodPeerList = [] # Peers with which handshake was completed successfully
 		self.tManager = torMan
 		offset = 0
 		while offset < len(peers):
@@ -55,4 +56,6 @@ class peerManager:
 		# print("All peer threads finished")
 
 	def loop(self):
-		print("peerManager loop")
+		print("PEER STATUS")
+		for peer in self.peerList:
+			print("{}:{}:[{}][{}]".format(peer.ip, peer.port, peer.currentStatus, peer.previousStatus))

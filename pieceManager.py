@@ -16,15 +16,26 @@ class pieceManager:
 		self.pieceQueue = []
 		self.createdQueue = 0
 
+		#Status
+		self.currentStatus = "None"
+		self.previousStatus = "None"
+
+	#Change Status
+	def changeStatus(self, newStatus):
+		self.previousStatus = self.currentStatus
+		self.currentStatus = newStatus
+
 	"""
 	All methods get called by peers
 	"""
 	# Get Have messages from peer
 	def submitHaveMessage(self, index):
+		self.changeStatus("Received a have message")
 		self.pieceFreq[index] += 1
 
 	# Get bitfield from peers
 	def submitBitfield(self, bitfield):
+		self.changeStatus("Received a bitfield")
 		bfBin = bitfield.bin
 		for i in range(self.numPieces):
 			if(bfBin[i] == '1'):
@@ -37,6 +48,7 @@ class pieceManager:
 			indexToReturn = 0
 			for indexToReturn in range(len(self.pieceQueue)):
 				if(bfBin[self.pieceQueue[indexToReturn].index] == '1'):
+					self.changeStatus("Return piece index [{}]".format(indexToReturn))
 					return self.pieceQueue.pop(indexToReturn)
 
 		# Return an empty piece
@@ -45,10 +57,11 @@ class pieceManager:
 	# Get piece from peer
 	# Write to disk if hashcheck matches otherwise add piece back to queue
 	def submitPiece(self, piece):
+		self.changeStatus("Received a completely downloaded piece")
 		# Check download piece with hash
 		m = hashlib.sha1(piece.data)
 		if(self.tManager.pieceHashes[piece.index] is m.digest()):
-			print("Do shit")
+			#print("Do shit")
 			# TO-DO
 			# Write piece to disk (Only works for single file for now)
 			if(os.path.isfile(self.tManager.files[0].filepath)): #file already exists
@@ -65,15 +78,15 @@ class pieceManager:
 			self.pieceQueue.append(piece)
 
 	def loop(self):
-		print("pieceManager loop")
+		#print("pieceManager loop")
 		# TO-DO
 		# Form initial work queue: Add all pieces to queue (Run once)
 		# if(self.createdInitialQueue == 0):
 			# Wait for sometime to receive bitfield messages
-		time.sleep(20)
-		print("pieceFreq:")
+		#time.sleep(20)
+		#print("pieceFreq:")
 		with self.tManager.piemLock:
-			print(self.pieceFreq)
+			#print(self.pieceFreq)
 			# Get piece indexes that is not available with any peer (needs to be placed at end of work queue)
 			unavailablePieceIndexes = []
 			for key in self.pieceFreq:
@@ -92,9 +105,12 @@ class pieceManager:
 			for ind in unavailablePieceIndexes:
 				self.pieceQueue.append(p.Piece(ind, self.tManager.pieceLength, 0))
 
+			self.changeStatus("Created/Updated pieceQueue")
 			self.createdQueue = 1
-			print("pieceQueue")
-			for pie in self.pieceQueue:
-				print(pie.index, end=", ")
+			# print("pieceQueue")
+			# for pie in self.pieceQueue:
+			# 	print(pie.index, end=", ")
 
-			print("")
+			#print("")
+
+		print("pieceManager:[{}][{}]".format(self.currentStatus, self.previousStatus))

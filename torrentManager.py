@@ -5,6 +5,8 @@ import struct
 import socket
 import random
 import threading
+import os
+import time
 
 import peerManager as pm
 import pieceManager as piem
@@ -79,6 +81,8 @@ class torrentManager:
 	# Timer for re-announce
 	def loop(self):
 		while(self.shouldLoop):
+			_=os.system("cls")
 			self.pieManager.loop()
 			self.pManager.loop()
+			time.sleep(2)
 			#self.shouldLoop = 0

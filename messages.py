@@ -23,7 +23,7 @@ class MessageDispatcher:
         try:
             payload_length, message_id = struct.unpack("!IB", self.payload[:5])
             # print("\033[92mPayload length: {}\033[0m".format(payload_length))
-            print("\033[92mMessage ID: {}\033[0m".format(message_id))
+            #print("\033[92mMessage ID: {}\033[0m".format(message_id))
 
         except:
             logging.exception("\033[91mError in unpacking message.\033[0m")
