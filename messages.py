@@ -27,6 +27,9 @@ class MessageDispatcher:
 
         except:
             logging.exception("\033[91mError in unpacking message.\033[0m")
+            # if len(self.payload) == 4:
+            #     return KeepAlive.decode(self.payload)
+            # else:
             # print("Payload: {}".format(self.payload))
             return None
 

@@ -10,7 +10,7 @@ import time
 
 import peerManager as pm
 import pieceManager as piem
-import file as f
+import torrent_file as file
 
 class torrentManager:
 	def __init__(self, torrentpath):
@@ -40,8 +40,9 @@ class torrentManager:
 		if('length' in torrent['info'].keys()):
 			self.length = torrent['info']['length']
 			self.name = torrent['info']['name']
-			# self.files.append(f.File(torrent['info']['name'], torrent['info']['name'], torrent['info']['length']))
+			self.files.append(file.File(torrent['info']['name'], torrent['info']['name'], torrent['info']['length']))
 			self.pieceLength = torrent['info']['piece length']
+			self.lastPieceLength = self.length % self.pieceLength
 			self.pieces = torrent['info']['pieces']
 			for index in range(0, len(self.pieces), 20):
 				self.pieceHashes.append(self.pieces[index:index + 20])

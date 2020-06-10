@@ -35,9 +35,9 @@ class Peer:
 
 		# Whether this peer has a piece to download or not
 		self.hasPiece = 0
-		self.currentPiece = 0
+		self.currentPiece = None
 		# self.currentBlockOffset = -1
-		self.blocks_downloaded = 0
+		# self.blocks_downloaded = 0
 		self.tManager = torMan
 		self.pieManager = self.tManager.pieManager
 		self.sentRequest = 0
@@ -47,11 +47,15 @@ class Peer:
 		self.currentStatus = "None"
 		self.previousStatus = "None"
 		self.ppStatus = "None"
+		self.p3status = "None"
+		self.p4status = "None"
 
 		self.changeStatus("I am born!")
 
 	#Change Status
 	def changeStatus(self, newStatus):
+		self.p4status = self.p3status
+		self.p3status = self.ppStatus
 		self.ppStatus = self.previousStatus
 		self.previousStatus = self.currentStatus
 		self.currentStatus = newStatus
@@ -85,7 +89,7 @@ class Peer:
 		except Exception as e:
 			self.running = False
 			self.changeStatus("\033[91mFailed to send message!\033[0m")
-			print(e)
+			print("{} [IP: {}, Port: {}]".format(e, self.ip, self.port))
 
 	# Reads from socket and returns the received data in bytes form
 	def read_from_socket(self):
@@ -226,6 +230,7 @@ class Peer:
 			self.state['am_choking'] = False
 		except Exception as e:
 			print("\033[91m{}\033[0m".format(e))
+			print("{} [IP: {}, Port: {}]".format(e, self.ip, self.port))
 
 	# If peer sends a have message, set the corresponding piece to be true in the self.pieces BitArray
 	def handle_have(self, msg):
@@ -268,25 +273,33 @@ class Peer:
 			#print("\033[93mSending Request Message [{}, {}] to Peer IP: {}, Port: {}\033[0m".format(self.currentPiece.index, block_offset, self.ip, self.port))
 			if self.am_interested() and self.is_unchoked():
 				self.changeStatus("\033[93mSending Request Message [{}, {}] to Peer IP: {}, Port: {}\033[0m".format(self.currentPiece.index, block_offset, self.ip, self.port))
-				request = messages.Request(self.currentPiece.index, block_offset, self.currentPiece.block_size).encode()
+				if block_offset == self.currentPiece.number_of_blocks - 1 and self.currentPiece.index == len(self.tManager.pieceHashes):
+					# request = messages.Request(self.currentPiece.index, block_offset*self.currentPiece.block_size, self.currentPiece.last_block_size).encode()
+					request = messages.Request(self.currentPiece.index, block_offset*self.currentPiece.block_size, 5).encode()
+
+				request = messages.Request(self.currentPiece.index, block_offset*self.currentPiece.block_size, self.currentPiece.block_size).encode()
 				self.send_msg(request)
 
 		except Exception as e:
 			print("\033[91m{}\033[0m".format(e))
+			print("{} [IP: {}, Port: {}]".format(e, self.ip, self.port))
 
 	# Receive a piece
 	def handle_piece(self, msg):
 		try:
 			# If received piece has matching piece_index and block_offset values, download it
 			if msg.piece_index == self.currentPiece.index:
+				self.currentPiece.blocks[int(msg.block_offset/self.currentPiece.block_size)] = 1
+				self.currentPiece.blocks_downloaded += 1
 				self.currentPiece.makePiece(msg.block_offset, msg.block)
-				self.changeStatus("Making piece [{}, {}]".format(msg.piece_index, msg.block_offset))
+				self.changeStatus("Making piece [{}, {}]".format(msg.piece_index, int(msg.block_offset/self.currentPiece.block_size)))
+				print("Making piece [{}, {}] [IP: {}, Port: {}]".format(msg.piece_index, int(msg.block_offset/self.currentPiece.block_size), self.ip, self.port))
 				#print("\033[95mData so far: {}\033[0m".format(self.currentPiece.final_data))
 				# Set that block as downloaded, increment downloaded blocks counter by 1, set hasPiece to 0 to receive new piece
-				self.currentPiece.blocks[msg.block_offset] = 1
-				self.blocks_downloaded += 1
+				# print("\033[92mBlocks Downloaded: {}, Number of Blocks: {}\033[0m".format(self.currentPiece.blocks_downloaded, self.currentPiece.number_of_blocks))
 		except Exception as e:
 			print("\033[91m{}\033[0m".format(e))
+			print("{} [IP: {}, Port: {}]".format(e, self.ip, self.port))
 
 	# Gets messages from read_buffer
 	def get_messages(self):
@@ -394,11 +407,13 @@ class Peer:
 				if(self.hasPiece):
 					# If all blocks have been downloaded
 					# print("\033[92mInside hasPiece if\033[0m")
-					if self.blocks_downloaded == self.currentPiece.number_of_blocks:
+					if self.currentPiece.blocks_downloaded == self.currentPiece.number_of_blocks:
+						print("About to submit - {}".format(self.currentPiece.index))
 						with self.tManager.piemLock:
+							print("[{}: {}] ({}) <{}>".format(self.ip, self.port, self.currentPiece.index, self.currentPiece.complete_piece()))
 							self.changeStatus("\033[92mSubmitting piece index: [{}]\033[0m".format(self.currentPiece.index))
 							self.pieManager.submitPiece(self.currentPiece)
-							self.blocks_downloaded = 0
+							self.currentPiece.blocks_downloaded = 0
 						self.hasPiece = 0
 						continue
 

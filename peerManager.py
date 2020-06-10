@@ -62,10 +62,12 @@ class peerManager:
 				peerlist2.append(peer)
 
 		self.peerList = peerlist2
-		
+
 		print("PEER STATUS")
 		for peer in self.peerList:
-			print("{}:{}:[{}][{}][{}]".format(peer.ip, peer.port, peer.ppStatus, peer.previousStatus, peer.currentStatus))
-			peer.ppStatus = ""
+			print("{}:{}:[{}][{}][{}][{}][{}]".format(peer.ip, peer.port, peer.p4status, peer.p3status, peer.ppStatus, peer.previousStatus, peer.currentStatus))
+			if peer.currentPiece != None:
+				print("\033[92m{}\033[0m".format(peer.currentPiece.blocks))
+			peer.ppStatus = peer.p4status = peer.p3status = ""
 			peer.previousStatus = ""
 			peer.currentStatus = ""
