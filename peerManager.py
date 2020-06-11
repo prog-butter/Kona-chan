@@ -15,7 +15,7 @@ class peerManager:
 	def __init__(self, peers, torMan):
 		colorama.init()
 		self.peerList = [] # Complete peer list
-		#self.goodPeerList = [] # Peers with which handshake was completed successfully
+		self.activePeerList = [] # Peers with which handshake was completed successfully
 		self.tManager = torMan
 		offset = 0
 		while offset < len(peers):
@@ -32,42 +32,45 @@ class peerManager:
 			# Add parsed peer to peerlist
 			self.peerList.append(p.Peer(ip, port, self.tManager))
 
+		#Status
+		"""
+		Oldest Status (lower index) → Newest Status (higher index)
+		"""
+		self.statusList = []
+		for _ in range(self.tManager.NUM_STATUS):
+			self.statusList.append("None")
+
 		"""
 			Implementer's Note: Even 30 peers is plenty, the official client version 3 in fact only
 			actively forms new connections if it has less than 30 peers and will refuse connections
 			if it has 55.
 		"""
-		#print("Good peers: {}".format(len(self.goodPeerList)))
 
-		# Start thread for good peers
+		# Start thread for all peers
 		executor = concurrent.futures.ThreadPoolExecutor(max_workers=50)
 		# Attempt handshake with all peers
 		for index in range(len(self.peerList)):
 			executor.submit(self.peerList[index].mainLoop)
 
-		# Run start() for peers with successful handshake
-		# for index in range(len(self.peerList)):
-		# 	if(f[index].result()):
-		# 		executor.submit(self.peerList[index].start)
 
-		print("Main thread continues...")
+	#Change Status
+	def changeStatus(self, newStatus):
+		for i in range(len(self.statusList) - 1):
+			self.statusList[i] = self.statusList[i + 1]
 
-		# executor.shutdown(wait = True)
-		# print("All peer threads finished")
+		self.statusList[len(self.statusList) - 1] = newStatus
+
+	# Print Status
+	def printStatus(self):
+		print("PEER MANAGER")
+		for s in self.statusList:
+			print("[{}]".format(s), end='')
+			s = ""
+		print("")
 
 	def loop(self):
-		peerlist2 = []
-		for peer in self.peerList:
-			if peer.isGoodPeer == 1:
-				peerlist2.append(peer)
-
-		self.peerList = peerlist2
-
-		print("PEER STATUS")
-		for peer in self.peerList:
-			print("{}:{}:[{}][{}][{}][{}][{}]".format(peer.ip, peer.port, peer.p4status, peer.p3status, peer.ppStatus, peer.previousStatus, peer.currentStatus))
-			if peer.currentPiece != None:
-				print("\033[92m{}\033[0m".format(peer.currentPiece.blocks))
-			peer.ppStatus = peer.p4status = peer.p3status = ""
-			peer.previousStatus = ""
-			peer.currentStatus = ""
+		if (self.DISPLAY_STATUS):
+			self.printStatus()
+			print("PEER STATUS")
+			for peer in self.peerList:
+				peer.printStatus()

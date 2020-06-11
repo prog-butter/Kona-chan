@@ -4,35 +4,35 @@ import os
 import time
 import colorama
 
-colorama.init()
-
 import piece as p
 
 class pieceManager:
-	def __init__(self, torMan):
+	def __init__(self, torMan, pieceList):
+		colorama.init()
 		self.tManager = torMan
 		self.pieceFreq = {}
 		self.numPieces = len(self.tManager.pieceHashes)
 		for i in range(self.numPieces):
 			self.pieceFreq[i] = 0
 
+		self.pieceList = pieceList
 		self.pieceQueue = []
-		self.createdQueue = 0
+		# self.createdQueue = 0
 
 		#Status
-		self.ppStatus = "None"
-		self.currentStatus = "None"
-		self.previousStatus = "None"
-		self.p3status = "None"
-		self.p4status = "None"
+		"""
+		Oldest Status (lower index) → Newest Status (higher index)
+		"""
+		self.statusList = []
+		for _ in range(5):
+			self.statusList.append("None")
 
 	#Change Status
 	def changeStatus(self, newStatus):
-		self.p4status = self.p3status
-		self.p3status = self.ppStatus
-		self.ppStatus = self.previousStatus
-		self.previousStatus = self.currentStatus
-		self.currentStatus = newStatus
+		for i in range(len(self.statusList) - 1):
+			self.statusList[i] = self.statusList[i + 1]
+
+		self.statusList[len(self.statusList) - 1] = newStatus
 
 	"""
 	All methods get called by peers
@@ -40,25 +40,32 @@ class pieceManager:
 	# Get Have messages from peer
 	def submitHaveMessage(self, index):
 		self.changeStatus("Received a have message [{}]".format(index))
-		self.pieceFreq[index] += 1
+		try:
+			self.pieceFreq[index] += 1
+		except Exception as e:
+			self.changeStatus("\033[91m{}\033[0m".format(e))
 
 	# Get bitfield from peers
 	def submitBitfield(self, bitfield):
 		self.changeStatus("Received a bitfield")
-		bfBin = bitfield.bin
-		for i in range(self.numPieces):
-			if(bfBin[i] == '1'):
-				self.pieceFreq[i] += 1
+		try:
+			bfBin = bitfield.bin
+			for i in range(self.numPieces):
+				if(bfBin[i] == '1'):
+					self.pieceFreq[i] += 1
+		except Exception as e:
+			self.changeStatus("\033[91m{}\033[0m".format(e))
 
-	# Return piece index to download
+	# Return (to peer) the piece index to download
 	def getPiece(self, bitfield):
 		bfBin = bitfield.bin
+		# An empty pieceQueue means either it hasn't been made yet or it's empty, in either case we return an empty piece
 		if(len(self.pieceQueue) != 0):
 			indexToReturn = 0
 			for indexToReturn in range(len(self.pieceQueue)):
 				if(bfBin[self.pieceQueue[indexToReturn].index] == '1'):
-					self.changeStatus("Return piece index [{}]".format(indexToReturn))
-					self.changeStatus("Queue size: {}".format(len(self.pieceQueue)))
+					self.changeStatus("Returning piece index [{}]".format(indexToReturn))
+					# self.changeStatus("Queue size: {}".format(len(self.pieceQueue)))
 					return self.pieceQueue.pop(indexToReturn)
 
 
@@ -68,13 +75,18 @@ class pieceManager:
 	# Get piece from peer
 	# Write to disk if hashcheck matches otherwise add piece back to queue
 	def submitPiece(self, piece):
-		self.changeStatus("Received a completely downloaded piece")
+		self.changeStatus("Received a completely downloaded piece <{}>".format(piece.index))
 		# Check download piece with hash
 		m = hashlib.sha1(piece.complete_piece())
 		print("Calculated Hash: {}".format(m.digest()))
 		print("Actual Hash: {}".format(self.tManager.pieceHashes[piece.index]))
 		if(self.tManager.pieceHashes[piece.index] == m.digest()):
 			self.changeStatus("\033[92mHash Matched! [{}]\033[0m".format(piece.index))
+			# Figure out which file to write to
+			
+
+
+
 			# Write piece to disk (Only works for single file for now)
 			try:
 				if(os.path.isfile(self.tManager.files[0].filepath)): #file already exists
@@ -94,6 +106,18 @@ class pieceManager:
 			self.changeStatus("\033[91mHash didn't match! ({}) Putting back in queue\033[0m".format(piece.index))
 			self.pieceQueue.append(piece)
 
+	# Return no. of bytes downloaded by this piece manager
+	def getBytesDownloaded(self):
+		return 0
+
+	# Print Status
+	def printStatus(self):
+		print("PIECE MANAGER")
+		for s in self.statusList:
+			print("[{}]".format(s), end='')
+			s = ""
+		print("")
+
 	def loop(self):
 		#print("pieceManager loop")
 		# TO-DO
@@ -102,7 +126,7 @@ class pieceManager:
 			# Wait for sometime to receive bitfield messages
 		#time.sleep(20)
 		#print("pieceFreq:")
-		if self.createdQueue == 0:
+		if len(self.pieceQueue) == 0:
 			with self.tManager.piemLock:
 				#print(self.pieceFreq)
 				# Get piece indexes that is not available with any peer (needs to be placed at end of work queue)
@@ -128,12 +152,12 @@ class pieceManager:
 					self.pieceQueue.append(p.Piece(ind, self.tManager.pieceLength, 0))
 
 				self.changeStatus("Created/Updated pieceQueue")
-				self.createdQueue = 1
+				# self.createdQueue = 1
 				# print("pieceQueue")
 				# for pie in self.pieceQueue:
 				# 	print(pie.index, end=", ")
 
 				#print("")
 
-		print("({}) pieceManager:[{}][{}][{}][{}][{}]".format(len(self.pieceQueue), self.p4status, self.p3status, self.ppStatus, self.previousStatus, self.currentStatus))
-		self.p3status = self.p4status = self.ppStatus = self.previousStatus = self.currentStatus = ""
+		if (self.DISPLAY_STATUS):
+			self.printStatus()

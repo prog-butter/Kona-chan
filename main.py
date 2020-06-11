@@ -9,8 +9,7 @@ import socket
 import torrentManager as tm
 
 def main():
-	tor1 = tm.torrentManager("P10.mkv.torrent")
-	tor1.initialAnnounce()
+	tor1 = tm.torrentManager("ubuntu.iso.torrent")
 	tor1.loop()
 
 if __name__ == "__main__":

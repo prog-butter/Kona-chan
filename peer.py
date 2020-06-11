@@ -44,21 +44,28 @@ class Peer:
 		self.pipeline = []
 
 		#Status
-		self.currentStatus = "None"
-		self.previousStatus = "None"
-		self.ppStatus = "None"
-		self.p3status = "None"
-		self.p4status = "None"
+		"""
+		Oldest Status (lower index) → Newest Status (higher index)
+		"""
+		self.statusList = []
+		for _ in range(self.tManager.NUM_STATUS):
+			self.statusList.append("None")
 
 		self.changeStatus("I am born!")
 
 	#Change Status
 	def changeStatus(self, newStatus):
-		self.p4status = self.p3status
-		self.p3status = self.ppStatus
-		self.ppStatus = self.previousStatus
-		self.previousStatus = self.currentStatus
-		self.currentStatus = newStatus
+		for i in range(len(self.statusList) - 1):
+			self.statusList[i] = self.statusList[i + 1]
+
+		self.statusList[len(self.statusList) - 1] = newStatus
+
+	# Print Status
+	def printStatus(self):
+		for s in self.statusList:
+			print("[{}]".format(s), end='')
+			s = ""
+		print("")
 
 	# Establish TCP connection with peer
 	def connect(self):
