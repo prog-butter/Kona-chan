@@ -156,6 +156,7 @@ class torrentManager:
 		print("TORRENT MANAGER [{}]".format(self.announceInterval - self.elapsed))
 		for s in self.statusList:
 			print("[{}]".format(s), end='')
+		for s in self.statusList:
 			s = ""
 		print("")
 
@@ -177,5 +178,5 @@ class torrentManager:
 				self.printStatus()
 			self.pieManager.loop()
 			self.pManager.loop()
-			# time.sleep(.5)
+			time.sleep(.5)
 			#self.shouldLoop = 0

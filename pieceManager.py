@@ -16,8 +16,18 @@ class pieceManager:
 			self.pieceFreq[i] = 0
 
 		self.pieceList = pieceList
-		self.pieceQueue = []
-		# self.createdQueue = 0
+		self.pieceQueue = [] # Store the pieces as a queue
+		self.downloadedPieces = [] # To keep track of which pieces have been downloaded
+		self.pieceQueueSize = len(self.tManager.pieceHashes)
+
+		#Add all pieces in order initially
+		for p in self.pieceList:
+			self.pieceQueue.append(p)
+			self.downloadedPieces.append(0)
+
+		self.updateTimer = time.monotonic()
+		self.updateInterval = 30
+		self.elapsed = 0
 
 		#Status
 		"""
@@ -65,9 +75,7 @@ class pieceManager:
 			for indexToReturn in range(len(self.pieceQueue)):
 				if(bfBin[self.pieceQueue[indexToReturn].index] == '1'):
 					self.changeStatus("Returning piece index [{}]".format(indexToReturn))
-					# self.changeStatus("Queue size: {}".format(len(self.pieceQueue)))
 					return self.pieceQueue.pop(indexToReturn)
-
 
 		# Return an empty piece
 		return p.Piece(0, 0, 1)
@@ -82,10 +90,11 @@ class pieceManager:
 		print("Actual Hash: {}".format(self.tManager.pieceHashes[piece.index]))
 		if(self.tManager.pieceHashes[piece.index] == m.digest()):
 			self.changeStatus("\033[92mHash Matched! [{}]\033[0m".format(piece.index))
+			# Update downloadedPieces list
+			self.downloadedPieces[piece.index] = 1
+
 			# Figure out which file to write to
-			
-
-
+			# TO-DO
 
 			# Write piece to disk (Only works for single file for now)
 			try:
@@ -108,56 +117,77 @@ class pieceManager:
 
 	# Return no. of bytes downloaded by this piece manager
 	def getBytesDownloaded(self):
+		# TO-DO
 		return 0
 
 	# Print Status
 	def printStatus(self):
-		print("PIECE MANAGER")
+		print("[{}]PIECE MANAGER [{}]".format(self.pieceQueueSize, self.updateInterval - self.elapsed))
 		for s in self.statusList:
 			print("[{}]".format(s), end='')
+		for s in self.statusList:
 			s = ""
 		print("")
 
+	# Make sure this method is called from within a lock
+	def isPieceIndexInQueue(self, index):
+		for p in self.pieceQueue:
+			if (p.index == index):
+				return 1
+		# Piece not in queue
+		return 0
+
+	# Make sure this method is called from within a lock
+	# (IMP) Method assumes index is in queue
+	def getPieceFromIndex(self, index):
+		for p in self.pieceQueue:
+			if (p.index == index):
+				return p
+
 	def loop(self):
-		#print("pieceManager loop")
-		# TO-DO
-		# Form initial work queue: Add all pieces to queue (Run once)
-		# if(self.createdInitialQueue == 0):
-			# Wait for sometime to receive bitfield messages
-		#time.sleep(20)
-		#print("pieceFreq:")
-		if len(self.pieceQueue) == 0:
-			with self.tManager.piemLock:
-				#print(self.pieceFreq)
-				# Get piece indexes that is not available with any peer (needs to be placed at end of work queue)
-				unavailablePieceIndexes = []
-				for key in self.pieceFreq:
-					if(self.pieceFreq[key] == 0):
-						unavailablePieceIndexes.append(key)
-				#tempPieceFreq = {k: v for k, v in sorted(self.pieceFreq.items(), key=lambda item: item[1])}
-				sortedKeys = list({k: v for k, v in sorted(self.pieceFreq.items(), key=lambda item: item[1])}.keys())
+		try:
+			if (self.updateTimer):
+				self.elapsed = time.monotonic() - self.updateTimer
+				if (self.elapsed >= self.updateInterval):
+					self.updateTimer = 0
+			if (self.updateTimer == 0):
+				with self.tManager.piemLock:
+					self.pieceQueueSize = len(self.pieceQueue)
+					#print(self.pieceFreq)
+					# Get piece indexes that is not available with any peer (needs to be placed at end of work queue)
+					unavailablePieceIndexes = []
+					for key in self.pieceFreq:
+						if(self.pieceFreq[key] == 0):
+							unavailablePieceIndexes.append(key)
 
-				self.pieceQueue = []
-				# Loop through sortedKeys (sorted in increasing order of piece freq)
-				for ind in sortedKeys:
-					if(ind not in unavailablePieceIndexes):
-						if ind == len(self.tManager.pieceHashes) - 1:
-							self.pieceQueue.append(p.Piece(ind, self.tManager.lastPieceLength, 0))
-						self.pieceQueue.append(p.Piece(ind, self.tManager.pieceLength, 0))
+					# Sort piece indexes according to frequency (lower frequency pieces appear first)
+					sortedKeys = list({k: v for k, v in sorted(self.pieceFreq.items(), key=lambda item: item[1])}.keys())
 
-				# Add remaining piece indexes
-				for ind in unavailablePieceIndexes:
-					if ind == len(self.tManager.pieceHashes) - 1:
-						self.pieceQueue.append(p.Piece(ind, self.tManager.lastPieceLength, 0))
-					self.pieceQueue.append(p.Piece(ind, self.tManager.pieceLength, 0))
+					self.updatedPieceQueue = []
+					# Loop through sortedKeys (sorted in increasing order of piece freq)
+					for ind in sortedKeys:
+						if(ind not in unavailablePieceIndexes and self.downloadedPieces[ind] == 0): # Not already downloaded
+							# Check if this piece is in queue (i.e. not already assigned to a peer)
+							if (self.isPieceIndexInQueue(ind)):
+								self.updatedPieceQueue.append(self.getPieceFromIndex(ind))
 
-				self.changeStatus("Created/Updated pieceQueue")
-				# self.createdQueue = 1
-				# print("pieceQueue")
-				# for pie in self.pieceQueue:
-				# 	print(pie.index, end=", ")
+					# Add remaining piece indexes
+					for ind in unavailablePieceIndexes:
+						if (self.downloadedPieces[ind] == 0): # Not already downloaded
+							# Check if this piece is in queue (i.e. not already assigned to a peer)
+							if (self.isPieceIndexInQueue(ind)):
+								self.updatedPieceQueue.append(self.getPieceFromIndex(ind))
 
-				#print("")
+					self.pieceQueue = self.updatedPieceQueue
 
-		if (self.DISPLAY_STATUS):
-			self.printStatus()
+					self.changeStatus("Updated pieceQueue")
+					# End of lock
+
+				if (self.tManager.DISPLAY_STATUS):
+					self.printStatus()
+
+				# Lastly start the timer
+				self.updateTimer = time.monotonic()
+
+		except Exception as e:
+			print(e)

@@ -62,8 +62,10 @@ class Peer:
 
 	# Print Status
 	def printStatus(self):
+		print("{}:{}".format(self.ip, self.port), end='')
 		for s in self.statusList:
 			print("[{}]".format(s), end='')
+		for s in self.statusList:
 			s = ""
 		print("")
 

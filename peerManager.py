@@ -65,11 +65,12 @@ class peerManager:
 		print("PEER MANAGER")
 		for s in self.statusList:
 			print("[{}]".format(s), end='')
+		for s in self.statusList:
 			s = ""
 		print("")
 
 	def loop(self):
-		if (self.DISPLAY_STATUS):
+		if (self.tManager.DISPLAY_STATUS):
 			self.printStatus()
 			print("PEER STATUS")
 			for peer in self.peerList:
