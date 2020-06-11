@@ -18,6 +18,7 @@ class MessageDispatcher:
     def __init__(self, payload):
         # print("\033[93mStarting message dispatcher.\033[0m")
         self.payload = payload
+        # print(self.payload)
 
     def dispatch(self):
         try:

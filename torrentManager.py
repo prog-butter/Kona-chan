@@ -102,6 +102,7 @@ class torrentManager:
 		print("Last piece is {} long and have {} blocks with \"LAST\" block {} long"
 			.format(self.pieceList[-1].piece_size, self.pieceList[-1].number_of_blocks, self.pieceList[-1].last_block_size))
 
+		i = input()
 		# Calculate infohash
 		encoded = bencode(torrent['info'])
 		m = hashlib.sha1(encoded)

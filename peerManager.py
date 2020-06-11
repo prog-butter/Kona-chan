@@ -97,6 +97,8 @@ class peerManager:
 				if (peer not in self.activePeerList):
 					self.executor.submit(peer.mainLoop)
 
+			self.connectTimer = time.monotonic()
+
 		# End of timer block
 		if (self.tManager.DISPLAY_STATUS):
 			self.printStatus()
