@@ -9,6 +9,7 @@ import bitstring
 # Globals
 colorama.init()
 DEFAULT_TIMEOUT_VALUE = 3
+PIPELINE_SIZE = 5
 PSTRLEN = 19
 PSTR = "BitTorrent protocol"
 
@@ -24,6 +25,8 @@ class Peer:
 
 		self.pieces = bitstring.BitArray(len(torMan.pieceHashes))
 		self.read_buffer = b''
+		self.request_pipeline = []
+		self.next_block_req = 0
 		self.running = True
 		self.state = {
 			# This client is choking the peer
@@ -280,19 +283,21 @@ class Peer:
 			self.pieManager.submitBitfield(self.pieces)
 
 	# If client is unchoked and interested, request message is sent
-	def send_request(self, block_offset):
+	def send_request(self, newRequests):
 		try:
-			# self.currentBlockOffset = block_offset
 			# print("\033[92mChoking: {}, Interested: {}\033[0m".format(self.state['peer_choking'], self.state['am_interested']))
 			#print("\033[93mSending Request Message [{}, {}] to Peer IP: {}, Port: {}\033[0m".format(self.currentPiece.index, block_offset, self.ip, self.port))
+			final_request = b''
 			if self.am_interested() and self.is_unchoked():
-				self.changeStatus("\033[93mSending Request Message [{}, {}] to Peer IP: {}, Port: {}\033[0m".format(self.currentPiece.index, block_offset, self.ip, self.port))
-				if block_offset == self.currentPiece.number_of_blocks - 1 and self.currentPiece.index == len(self.tManager.pieceHashes):
-					# request = messages.Request(self.currentPiece.index, block_offset*self.currentPiece.block_size, self.currentPiece.last_block_size).encode()
-					request = messages.Request(self.currentPiece.index, block_offset*self.currentPiece.block_size, 5).encode()
+				for blocks_offset in newRequests:
+					self.changeStatus("\033[93mSending Request Message [{}, {}] to Peer IP: {}, Port: {}\033[0m".format(self.currentPiece.index, block_offset, self.ip, self.port))
+					if block_offset == self.currentPiece.number_of_blocks - 1 and self.currentPiece.index == len(self.tManager.pieceHashes) - 1:
+						request = messages.Request(self.currentPiece.index, block_offset*self.currentPiece.block_size, self.currentPiece.last_block_size).encode()
+					else:
+						request = messages.Request(self.currentPiece.index, block_offset*self.currentPiece.block_size, self.currentPiece.block_size).encode()
 
-				request = messages.Request(self.currentPiece.index, block_offset*self.currentPiece.block_size, self.currentPiece.block_size).encode()
-				self.send_msg(request)
+					final_request += request
+				self.send_msg(final_request)
 
 		except Exception as e:
 			print("\033[91m{}\033[0m".format(e))
@@ -303,9 +308,15 @@ class Peer:
 		try:
 			# If received piece has matching piece_index and block_offset values, download it
 			if msg.piece_index == self.currentPiece.index:
+				# Set the block received as 1 (downloaded)
 				self.currentPiece.blocks[int(msg.block_offset/self.currentPiece.block_size)] = 1
+				# Increase number of blocks downloaded by 1
 				self.currentPiece.blocks_downloaded += 1
+				# Write data received within the block
 				self.currentPiece.makePiece(msg.block_offset, msg.block)
+				# Remove the received piece from the request pipeline
+				self.request_pipeline.remove(int(msg.block_offset/self.currentPiece.block_size))
+
 				self.changeStatus("Making piece [{}, {}]".format(msg.piece_index, int(msg.block_offset/self.currentPiece.block_size)))
 				print("Making piece [{}, {}] [IP: {}, Port: {}]".format(msg.piece_index, int(msg.block_offset/self.currentPiece.block_size), self.ip, self.port))
 				#print("\033[95mData so far: {}\033[0m".format(self.currentPiece.final_data))
@@ -437,15 +448,22 @@ class Peer:
 						continue
 
 					#Send request messages to download piece
-					# if self.sentRequest == 0:
-					for i in range(len(self.currentPiece.blocks)):
-						if self.currentPiece.blocks[i] != 1:
-							self.send_request(i)
-						# self.sentRequest = 1
-					# for i in range(len(self.currentPiece.blocks)):
-					# 	if self.currentPiece.blocks[i] != 1:
-					# 		self.send_request(i)
-					# 		time.sleep(0.2)
+					# Create request pipeline
+					toQueue = PIPELINE_SIZE - len(self.request_pipeline)
+					newRequests = []
+					for i in range(toQueue):
+						offset_val = self.next_block_req + i
+						blockToRequest = self.currentPiece.blocks[offset_val]
+						# If blockToRequest has not already been downloaded
+						if blockToRequest != 1:
+							# Add that block offset value to newRequests and outgoing requests pipeline
+							newRequests.append(offset_val)
+							self.request_pipeline.append(offset_val)
+
+					# Save offset value of first block to be requested in the next iteration
+					self.next_block_req = newRequests[-1] + 1
+					# Send new requests
+					self.send_request(newRequests)
 
 			else:
 				self.changeStatus("\033[91mBeing Choked.\033[0m")
