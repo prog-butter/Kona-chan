@@ -44,7 +44,7 @@ class torrentManager:
 		"""
 		Oldest Status (lower index) → Newest Status (higher index)
 		"""
-		self.NUM_STATUS = 5
+		self.NUM_STATUS = 10
 		self.DISPLAY_STATUS = 1
 		self.statusList = []
 		for _ in range(self.NUM_STATUS):

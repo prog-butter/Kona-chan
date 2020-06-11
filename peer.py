@@ -50,6 +50,10 @@ class Peer:
 		self.sentRequest = 0
 		self.pipeline = []
 
+		self.keepAliveTimer = 0
+		self.keepAliveInterval = 100
+		# self.elapsed = 0
+
 		#Status
 		"""
 		Oldest Status (lower index) → Newest Status (higher index)
@@ -286,6 +290,12 @@ class Peer:
 			self.changeStatus("\033[93mSending bitfield to Piece Manager\033[0m")
 			self.pieManager.submitBitfield(self.pieces)
 
+	def sendKeepAlive(self):
+		if (self.is_unchoked()):
+			keepAlive = messages.KeepAlive().encode()
+			self.changeStatus("Sending KeepAlive Message")
+			self.send_msg(keepAlive)
+
 	# If client is unchoked and interested, request message is sent
 	# def send_request(self, newRequests):
 	def send_request(self):
@@ -392,19 +402,23 @@ class Peer:
 				#print("\033[94mFound Piece Message [IP: {}, Port: {}]\033[0m".format(self.ip, self.port))
 				self.changeStatus("\033[94mFound Piece Message [{}, {}]\033[0m".format(msg.piece_index, int(msg.block_offset/self.currentPiece.block_size)))
 				self.handle_piece(msg)
+			elif isinstance(msg, messages.Request):
+				self.changeStatus("\033[96mFound Request Message\033[0m")
+				# self.handle_request(msg)
+			elif isinstance(msg, messages.KeepAlive):
+				self.changeStatus("\033[96mFound Keep Alive Message\033[0m")
 
-			else:
-				logging.error("\033[91mMessage not recognized.\033[0m")
+			elif isinstance(msg, messages.Cancel):
+				self.changeStatus("\033[96mFound Cancel Message\033[0m")
+				# self.handle_cancel(msg)
+			# else:
+			# 	# self.changeStatus("{}".format(msg))
+			# 	print(msg)
+			# 	logging.error("\033[91mMessage not recognized.\033[0m")
 
 		except Exception as e:
 			print("\033[91m{}\033[0m".format(e))
-		# elif isinstance(msg, messages.Request):
-		# 	print("\033[96mFound Request Message [IP: {}, Port: {}]\033[0m".format(self.ip, self.port))
-		# 	self.handle_request(msg)
-		#
-		# elif isinstance(msg, messages.Cancel):
-		# 	print("\033[96mFound Cancel Message [IP: {}, Port: {}]\033[0m".format(self.ip, self.port))
-		# 	self.handle_cancel(msg)
+
 
 
 	# Main loop
@@ -422,6 +436,14 @@ class Peer:
 				return
 
 			while self.running:
+				# if (self.keepAliveTimer):
+				# 	elapsed = time.monotonic() - self.keepAliveTimer
+				# 	if (elapsed > self.keepAliveInterval):
+				# 		self.keepAliveTimer = 0
+				# if (self.keepAliveTimer == 0):
+				# 	self.sendKeepAlive()
+				# 	self.keepAliveTimer = time.monotonic()
+
 				self.changeStatus("\033[92mAlive! ({})\033[0m".format(self.hasPiece))
 				# WOW
 				self.read_buffer += self.read_from_socket()
@@ -494,8 +516,8 @@ class Peer:
 								for i in range(toQueue):
 									self.request_pipeline.append(self.latest_block_index)
 									self.latest_block_index += 1
-								if self.latest_block_index >= self.currentPiece.number_of_blocks:
-									self.latest_block_index = 0
+								# if self.latest_block_index >= self.currentPiece.number_of_blocks:
+								# 	self.latest_block_index = 0
 
 								self.send_request()
 

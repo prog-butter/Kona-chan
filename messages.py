@@ -100,14 +100,15 @@ class KeepAlive(Message):
         KEEP_ALIVE = <length>
             - payload length = 0 (4 bytes)
     """
-    payload_length = 0
+    # payload_length = 0
     total_length = 4
 
     def __init__(self):
         super(KeepAlive, self).__init__()
+        self.payload_length = 0
 
     def encode(self):
-        return struct.pack("!I", payload_length)
+        return struct.pack("!I", self.payload_length)
 
     @classmethod
     def decode(cls, response):
