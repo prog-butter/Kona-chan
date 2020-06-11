@@ -143,6 +143,9 @@ class torrentManager:
 			self.trackerid = response['tracker id']
 		self.announceInterval = response['interval']
 
+		# TO-DO
+		# Handle new peer list from reannouncing
+
 		# Instantiate a peer manager for this torrent file
 		if (announceEvent == "started"): # Needs to be created only once
 			self.changeStatus("Creating peer manager for this torrent")
@@ -154,10 +157,9 @@ class torrentManager:
 	# Print Status
 	def printStatus(self):
 		print("TORRENT MANAGER [{}]".format(self.announceInterval - self.elapsed))
-		for s in self.statusList:
-			print("[{}]".format(s), end='')
-		for s in self.statusList:
-			s = ""
+		for i in range(len(self.statusList)):
+			print("[{}]".format(self.statusList[i]), end='')
+			self.statusList[i] = ""
 		print("")
 
 	def loop(self):
@@ -178,5 +180,5 @@ class torrentManager:
 				self.printStatus()
 			self.pieManager.loop()
 			self.pManager.loop()
-			time.sleep(.5)
+			time.sleep(1)
 			#self.shouldLoop = 0

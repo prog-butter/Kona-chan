@@ -123,10 +123,9 @@ class pieceManager:
 	# Print Status
 	def printStatus(self):
 		print("[{}]PIECE MANAGER [{}]".format(self.pieceQueueSize, self.updateInterval - self.elapsed))
-		for s in self.statusList:
-			print("[{}]".format(s), end='')
-		for s in self.statusList:
-			s = ""
+		for i in range(len(self.statusList)):
+			print("[{}]".format(self.statusList[i]), end='')
+			self.statusList[i] = ""
 		print("")
 
 	# Make sure this method is called from within a lock
@@ -145,49 +144,49 @@ class pieceManager:
 				return p
 
 	def loop(self):
-		try:
-			if (self.updateTimer):
-				self.elapsed = time.monotonic() - self.updateTimer
-				if (self.elapsed >= self.updateInterval):
-					self.updateTimer = 0
-			if (self.updateTimer == 0):
-				with self.tManager.piemLock:
-					self.pieceQueueSize = len(self.pieceQueue)
-					#print(self.pieceFreq)
-					# Get piece indexes that is not available with any peer (needs to be placed at end of work queue)
-					unavailablePieceIndexes = []
-					for key in self.pieceFreq:
-						if(self.pieceFreq[key] == 0):
-							unavailablePieceIndexes.append(key)
+		if (self.updateTimer):
+			self.elapsed = time.monotonic() - self.updateTimer
+			if (self.elapsed >= self.updateInterval):
+				self.updateTimer = 0
+		if (self.updateTimer == 0):
+			with self.tManager.piemLock:
+				self.pieceQueueSize = len(self.pieceQueue)
+				#print(self.pieceFreq)
+				# Get piece indexes that is not available with any peer (needs to be placed at end of work queue)
+				unavailablePieceIndexes = []
+				for key in self.pieceFreq:
+					if(self.pieceFreq[key] == 0):
+						unavailablePieceIndexes.append(key)
 
-					# Sort piece indexes according to frequency (lower frequency pieces appear first)
-					sortedKeys = list({k: v for k, v in sorted(self.pieceFreq.items(), key=lambda item: item[1])}.keys())
+				# Sort piece indexes according to frequency (lower frequency pieces appear first)
+				sortedKeys = list({k: v for k, v in sorted(self.pieceFreq.items(), key=lambda item: item[1])}.keys())
 
-					self.updatedPieceQueue = []
-					# Loop through sortedKeys (sorted in increasing order of piece freq)
-					for ind in sortedKeys:
-						if(ind not in unavailablePieceIndexes and self.downloadedPieces[ind] == 0): # Not already downloaded
-							# Check if this piece is in queue (i.e. not already assigned to a peer)
-							if (self.isPieceIndexInQueue(ind)):
-								self.updatedPieceQueue.append(self.getPieceFromIndex(ind))
+				self.updatedPieceQueue = []
+				# Loop through sortedKeys (sorted in increasing order of piece freq)
+				for ind in sortedKeys:
+					if(ind not in unavailablePieceIndexes and self.downloadedPieces[ind] == 0): # Not already downloaded
+						# Check if this piece is in queue (i.e. not already assigned to a peer)
+						if (self.isPieceIndexInQueue(ind)):
+							self.updatedPieceQueue.append(self.getPieceFromIndex(ind))
 
-					# Add remaining piece indexes
-					for ind in unavailablePieceIndexes:
-						if (self.downloadedPieces[ind] == 0): # Not already downloaded
-							# Check if this piece is in queue (i.e. not already assigned to a peer)
-							if (self.isPieceIndexInQueue(ind)):
-								self.updatedPieceQueue.append(self.getPieceFromIndex(ind))
+				# Add remaining piece indexes
+				for ind in unavailablePieceIndexes:
+					if (self.downloadedPieces[ind] == 0): # Not already downloaded
+						# Check if this piece is in queue (i.e. not already assigned to a peer)
+						if (self.isPieceIndexInQueue(ind)):
+							self.updatedPieceQueue.append(self.getPieceFromIndex(ind))
 
-					self.pieceQueue = self.updatedPieceQueue
+				self.pieceQueue = self.updatedPieceQueue
 
-					self.changeStatus("Updated pieceQueue")
-					# End of lock
+				self.changeStatus("Updated pieceQueue")
+				# End of lock
 
-				if (self.tManager.DISPLAY_STATUS):
-					self.printStatus()
 
-				# Lastly start the timer
-				self.updateTimer = time.monotonic()
+			# Lastly start the timer
+			self.updateTimer = time.monotonic()
+		# Timer block ends here
+		with self.tManager.piemLock:
+			self.pieceQueueSize = len(self.pieceQueue)
 
-		except Exception as e:
-			print(e)
+		if (self.tManager.DISPLAY_STATUS):
+			self.printStatus()

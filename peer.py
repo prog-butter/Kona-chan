@@ -18,7 +18,10 @@ class Peer:
 		self.ip = ip
 		self.port = int(port)
 		self.sock = None
+
 		self.isGoodPeer = 1
+		self.readyToBeChecked = 0
+
 		self.pieces = bitstring.BitArray(len(torMan.pieceHashes))
 		self.read_buffer = b''
 		self.running = True
@@ -63,10 +66,9 @@ class Peer:
 	# Print Status
 	def printStatus(self):
 		print("{}:{}".format(self.ip, self.port), end='')
-		for s in self.statusList:
-			print("[{}]".format(s), end='')
-		for s in self.statusList:
-			s = ""
+		for i in range(len(self.statusList)):
+			print("[{}]".format(self.statusList[i]), end='')
+			self.statusList[i] = ""
 		print("")
 
 	# Establish TCP connection with peer
@@ -79,6 +81,7 @@ class Peer:
 		except socket.timeout:
 			#print("\033[31mSocket timed out!\033[39m")
 			self.isGoodPeer = 0
+			self.readyToBeChecked = 1
 			self.changeStatus("\033[31mSocket timed out!\033[0m")
 			self.sock.close()
 			return -1
@@ -86,6 +89,7 @@ class Peer:
 		except socket.error:
 			#print("\033[31mConnection error!\033[39m")
 			self.isGoodPeer = 0
+			self.readyToBeChecked = 1
 			self.changeStatus("\033[31mConnection error!\033[0m")
 			self.sock.close()
 			return -1
@@ -156,6 +160,7 @@ class Peer:
 
 		except Exception:
 			self.isGoodPeer = 0
+			self.readyToBeChecked = 1
 			print("\033[91mError sending or receiving Handshake message.\033[0m")
 			self.sock.close()
 			return -1
@@ -378,10 +383,15 @@ class Peer:
 
 	# Main loop
 	def mainLoop(self):
+		# Initially
+		self.isGoodPeer = 1
+		self.readyToBeChecked = 0
 		# Connect to peer and handshake, close connection and thread otherwise
 		if self.connect() == -1 or self.handshake() == -1:
 			#print("\033[91mThread Closed.\033[0m")
 			self.changeStatus("\033[91mThread Closed.\033[0m")
+			self.isGoodPeer = 0
+			self.readyToBeChecked = 1
 			return
 
 		while self.running:
