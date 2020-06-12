@@ -8,6 +8,7 @@ import time
 import peer as p
 
 DEFAULT_TIMEOUT_VALUE = 3
+MAX_THREADS = 50
 
 PSTRLEN = 19
 PSTR = "BitTorrent protocol"
@@ -18,22 +19,10 @@ class peerManager:
 		self.peerList = [] # Complete peer list
 		self.activePeerList = [] # Peers with which handshake was completed successfully
 		self.tManager = torMan
-		offset = 0
-		while offset < len(peers):
-			# Unpack bytes for IP from byte-string, as big-endian integers and get the first element from the tuple
-			ip_unpacked = struct.unpack_from("!i", peers, offset)[0]
-			# Pack read bytes into a single IP and convert to standard 32-bit IP notation
-			ip = socket.inet_ntoa(struct.pack("!i", ip_unpacked))
-			# Update offset to read the corresponding port
-			offset += 4
-			# Unpack bytes for port and join them as Big-endian uint16 to form port
-			port = struct.unpack_from("!H", peers, offset)[0]
-			# Update offset for next peer
-			offset += 2
-			# Add parsed peer to peerlist
-			self.peerList.append(p.Peer(ip, port, self.tManager))
 
-		self.MAX_THREADS = 50
+		self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=MAX_THREADS)
+		self.updatePeerList(peers)
+
 		# self.threadFutures = []
 
 		self.connectTimer = time.monotonic()
@@ -48,17 +37,6 @@ class peerManager:
 		for _ in range(self.tManager.NUM_STATUS):
 			self.statusList.append("None")
 
-		"""
-			Implementer's Note: Even 30 peers is plenty, the official client version 3 in fact only
-			actively forms new connections if it has less than 30 peers and will refuse connections
-			if it has 55.
-		"""
-
-		self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=self.MAX_THREADS)
-
-		# Start thread for all peers
-		for index in range(len(self.peerList)):
-			self.executor.submit(self.peerList[index].mainLoop)
 
 	#Change Status
 	def changeStatus(self, newStatus):
@@ -75,15 +53,53 @@ class peerManager:
 			self.statusList[i] = ""
 		print("")
 
+	def updatePeerList(self, peers):
+		offset = 0
+		updatedPeerList = []
+		while offset < len(peers):
+			# Unpack bytes for IP from byte-string, as big-endian integers and get the first element from the tuple
+			ip_unpacked = struct.unpack_from("!i", peers, offset)[0]
+			# Pack read bytes into a single IP and convert to standard 32-bit IP notation
+			ip = socket.inet_ntoa(struct.pack("!i", ip_unpacked))
+			# Update offset to read the corresponding port
+			offset += 4
+			# Unpack bytes for port and join them as Big-endian uint16 to form port
+			port = struct.unpack_from("!H", peers, offset)[0]
+			# Update offset for next peer
+			offset += 2
+			# Add parsed peer to peerlist
+			newpeer = p.Peer(ip, port, self.tManager)
+			if (newpeer not in updatedPeerList):
+				updatedPeerList.append(newpeer)
+		self.peerList = updatedPeerList
+
+		"""
+			Implementer's Note: Even 30 peers is plenty, the official client version 3 in fact only
+			actively forms new connections if it has less than 30 peers and will refuse connections
+			if it has 55.
+		"""
+
+		# Start thread for all peers
+		for index in range(len(self.peerList)):
+			self.executor.submit(self.peerList[index].mainLoop)
+
 	def loop(self):
 		# Update active peers
-		self.activePeerList = []
 		for peer in self.peerList:
-			if (peer.readyToBeChecked == 0): # Cannot decide whether this peer is active or not
+			if (peer.readyToBeChecked == 0 and peer not in self.activePeerList): # Cannot decide whether this peer is active or not
 				self.activePeerList.append(peer)
 			else:
-				if (peer.isGoodPeer == 1): # Add to active peer list if this peer is good
+				if (peer.isGoodPeer == 1  and peer not in self.activePeerList): # Add to active peer list if this peer is good
 					self.activePeerList.append(peer)
+
+		# Remove dead peers from active peer list
+		reqIndex = -1
+		for i in range(len(self.activePeerList)):
+			if (self.activePeerList[i].readyToBeChecked and not self.activePeerList[i].isGoodPeer):
+				reqIndex = i
+				break
+		if (reqIndex != -1):
+			del self.activePeerList[reqIndex]
 
 		# Timer to attempt connecting with inactive peers
 		if (self.connectTimer):

@@ -9,7 +9,7 @@ import bitstring
 # Globals
 colorama.init()
 DEFAULT_TIMEOUT_VALUE = 3
-PIPELINE_SIZE = 10
+PIPELINE_SIZE = 100
 PSTRLEN = 19
 PSTR = "BitTorrent protocol"
 
@@ -41,14 +41,18 @@ class Peer:
 		}
 
 		# Whether this peer has a piece to download or not
-		self.hasPiece = 0
-		self.currentPiece = None
+		# self.hasPiece = 0
+		self.currentPieces = []
+		self.pieceLimit = PIPELINE_SIZE / torMan.pieceList[0].number_of_blocks
+		self.fileDownloaded = 0
+		self.changeInPipeSinceLastReq = 0 # Only request if there is some change in the pipeline
 		# self.currentBlockOffset = -1
 		# self.blocks_downloaded = 0
 		self.tManager = torMan
 		self.pieManager = self.tManager.pieManager
 		self.sentRequest = 0
 		self.pipeline = []
+		self.bytesDownloaded = 0
 
 		self.keepAliveTimer = 0
 		self.keepAliveInterval = 100
@@ -73,7 +77,7 @@ class Peer:
 
 	# Print Status
 	def printStatus(self):
-		print("{}:{}".format(self.ip, self.port), end='')
+		print("{}:{}[D:{}]".format(self.ip, self.port, (self.bytesDownloaded/1024**2)), end='')
 		for i in range(len(self.statusList)):
 			print("[{}]".format(self.statusList[i]), end='')
 			self.statusList[i] = ""
@@ -108,7 +112,9 @@ class Peer:
 			self.sock.send(msg)
 
 		except Exception as e:
-			self.running = False
+			# self.running = False
+			self.isGoodPeer = 0
+			self.readyToBeChecked = 1
 			self.changeStatus("\033[91mFailed to send message!\033[0m")
 			print("{} [IP: {}, Port: {}]".format(e, self.ip, self.port))
 
@@ -130,7 +136,9 @@ class Peer:
 				break
 
 			except Exception:
-				logging.exception("\033[91mRecieve failed.\033[0m")
+				self.isGoodPeer = 0
+				self.readyToBeChecked = 1
+				print("\033[91m[{}:{}]Recieve failed.\033[0m".format(self.ip, self.port))
 				break
 
 		# print(data)
@@ -177,12 +185,12 @@ class Peer:
 	# Returns true if message is keepAlive, False otherwise
 	def check_for_keepAlive(self):
 		#print("\033[93mChecking for KeepAlive\033[0m")
-		self.changeStatus("\033[93mChecking for KeepAlive\033[0m")
+		# self.changeStatus("\033[93mChecking for KeepAlive\033[0m")
 		try:
 			# print("Read Buffer: {}".format(self.read_buffer))
 			keep_alive = messages.KeepAlive.decode(self.read_buffer)
 		except messages.WrongMessageException:
-			self.changeStatus("\033[91mNot a keepAlive message\033[0m")
+			# self.changeStatus("\033[91mNot a keepAlive message\033[0m")
 			return False
 		except Exception as e:
 			#print("\033[91m{}\033[0m".format(e))
@@ -303,18 +311,24 @@ class Peer:
 			# print("\033[92mChoking: {}, Interested: {}\033[0m".format(self.state['peer_choking'], self.state['am_interested']))
 			# print("\033[93mSending Request Message [{}, {}] to Peer IP: {}, Port: {}\033[0m".format(self.currentPiece.index, block_offset, self.ip, self.port))
 			final_request = b''
-			print("{} , {}".format(self.am_interested(), self.is_unchoked()))
-			if self.am_interested() and self.is_unchoked():
-				for block_offset in self.request_pipeline:
-					if block_offset == self.currentPiece.number_of_blocks - 1 and self.currentPiece.index == len(self.tManager.pieceHashes) - 1:
-						request = messages.Request(self.currentPiece.index, block_offset*self.currentPiece.block_size, self.currentPiece.last_block_size).encode()
+			# print("{} , {}".format(self.am_interested(), self.is_unchoked()))
+			if self.am_interested() and self.is_unchoked() and self.changeInPipeSinceLastReq:
+				self.changeStatus("\033[93mAdding {} reqs to request packet\033[0m".format(len(self.request_pipeline)))
+				for req in self.request_pipeline:
+					# self.changeStatus("\033[93mAdding piece [{}, {}] to request packet\033[0m".format(req[0], req[1]))
+					if (req[2]):
+						# Block being requested is the last block
+						request = messages.Request(req[0], req[1] * self.currentPieces[0].block_size, req[3]).encode()
 					else:
-						request = messages.Request(self.currentPiece.index, block_offset*self.currentPiece.block_size, self.currentPiece.block_size).encode()
+						# Block being requested is not the last block
+						request = messages.Request(req[0], req[1] * self.currentPieces[0].block_size, req[3]).encode()
 
 					final_request += request
 
-				self.changeStatus("\033[93mSending Request Message [{}] to Peer IP: {}, Port: {}\033[0m".format(self.currentPiece.index, self.ip, self.port))
+				# self.changeStatus("\033[93mSending Request Message [{}] to Peer IP: {}, Port: {}\033[0m".format(self.currentPiece.index, self.ip, self.port))
 				self.send_msg(final_request)
+				self.changeInPipeSinceLastReq = 0
+				self.changeStatus("\033[92mRequest Sent!\033[0m")
 
 		except Exception as e:
 			self.isGoodPeer = 0
@@ -326,21 +340,30 @@ class Peer:
 	def handle_piece(self, msg):
 		try:
 			# If received piece has matching piece_index and block_offset values, download it
-			if msg.piece_index == self.currentPiece.index:
-				# Set the block received as 1 (downloaded)
-				self.currentPiece.blocks[int(msg.block_offset/self.currentPiece.block_size)] = 1
-				# Increase number of blocks downloaded by 1
-				self.currentPiece.blocks_downloaded += 1
-				# Write data received within the block
-				self.currentPiece.makePiece(msg.block_offset, msg.block)
-				# Remove the received piece from the request pipeline
-				self.request_pipeline.remove(int(msg.block_offset/self.currentPiece.block_size))
+			for p in self.currentPieces:
+				if msg.piece_index == p.index:
+					# Set the block received as 1 (downloaded)
+					p.blocks[int(msg.block_offset / self.currentPieces[0].block_size)] = 1
+					# Increase number of blocks downloaded by 1
+					p.blocks_downloaded += 1
+					# Write data received within the block
+					p.makePiece(msg.block_offset, msg.block)
+					self.bytesDownloaded += msg.block_length
+					# Remove the received block from the request pipeline
+					reqIndex = 0
+					for i in range(len(self.request_pipeline)):
+						if (self.request_pipeline[i][0] == msg.piece_index and self.request_pipeline[i][1] == msg.block_offset):
+							reqIndex = i
+							break
+					del self.request_pipeline[reqIndex]
 
-				self.changeStatus("Making piece [{}, {}]".format(msg.piece_index, int(msg.block_offset/self.currentPiece.block_size)))
-				print("Making piece [{}, {}] [IP: {}, Port: {}]".format(msg.piece_index, int(msg.block_offset/self.currentPiece.block_size), self.ip, self.port))
-				#print("\033[95mData so far: {}\033[0m".format(self.currentPiece.final_data))
-				# Set that block as downloaded, increment downloaded blocks counter by 1, set hasPiece to 0 to receive new piece
-				# print("\033[92mBlocks Downloaded: {}, Number of Blocks: {}\033[0m".format(self.currentPiece.blocks_downloaded, self.currentPiece.number_of_blocks))
+					self.changeStatus("Making piece [{}, {}]".format(msg.piece_index, int(msg.block_offset / self.currentPieces[0].block_size)))
+					# print("Making piece [{}, {}] [IP: {}, Port: {}]".format(msg.piece_index, int(msg.block_offset/self.currentPiece.block_size), self.ip, self.port))
+					#print("\033[95mData so far: {}\033[0m".format(self.currentPiece.final_data))
+					# Set that block as downloaded, increment downloaded blocks counter by 1, set hasPiece to 0 to receive new piece
+					# print("\033[92mBlocks Downloaded: {}, Number of Blocks: {}\033[0m".format(self.currentPiece.blocks_downloaded, self.currentPiece.number_of_blocks))
+			# TO-DO
+			# Display a message if peer doesn't have the received piece
 		except Exception as e:
 			self.isGoodPeer = 0
 			self.readyToBeChecked = 1
@@ -400,7 +423,7 @@ class Peer:
 
 			elif isinstance(msg, messages.Piece):
 				#print("\033[94mFound Piece Message [IP: {}, Port: {}]\033[0m".format(self.ip, self.port))
-				self.changeStatus("\033[94mFound Piece Message [{}, {}]\033[0m".format(msg.piece_index, int(msg.block_offset/self.currentPiece.block_size)))
+				self.changeStatus("\033[94mFound Piece Message [{}, {}]\033[0m".format(msg.piece_index, int(msg.block_offset/self.currentPieces[0].block_size)))
 				self.handle_piece(msg)
 			elif isinstance(msg, messages.Request):
 				self.changeStatus("\033[96mFound Request Message\033[0m")
@@ -436,6 +459,8 @@ class Peer:
 				return
 
 			while self.running:
+				if (self.readyToBeChecked and not self.isGoodPeer):
+					return
 				# if (self.keepAliveTimer):
 				# 	elapsed = time.monotonic() - self.keepAliveTimer
 				# 	if (elapsed > self.keepAliveInterval):
@@ -443,11 +468,9 @@ class Peer:
 				# if (self.keepAliveTimer == 0):
 				# 	self.sendKeepAlive()
 				# 	self.keepAliveTimer = time.monotonic()
-
-				self.changeStatus("\033[92mAlive! ({})\033[0m".format(self.hasPiece))
 				# WOW
 				self.read_buffer += self.read_from_socket()
-				while len(self.read_buffer) > 4:
+				while len(self.read_buffer) >= 4:
 					self.changeStatus("Reading messages from buffer")
 					self.read_buffer += self.read_from_socket()
 					msg = self.get_messages()
@@ -455,21 +478,25 @@ class Peer:
 					# self.sentRequest = 0
 
 				if not self.state['peer_choking']:
-					# Ask for piece to download from pieceManager
-					if(self.hasPiece == 0):
+					self.changeStatus("\033[92mAlive! ({})\033[0m".format(len(self.currentPieces)))
+					# Ask for piece(s) to download from pieceManager
+					if(len(self.currentPieces) < self.pieceLimit and not self.fileDownloaded):
 						with self.tManager.piemLock:
-							self.changeStatus("Attempting to get a piece from pieceManager")
-							self.currentPiece = self.pieManager.getPiece(self.pieces)
-							print("AAAA")
-						if(self.currentPiece.isEmpty == 0):
-							self.currentPiece.blocks_downloaded = 0
-							self.latest_block_index = 0
-							self.request_pipeline = []
-							print("BBBB") #Check if a valid piece was received
-							self.hasPiece = 1
-							self.changeStatus("Received piece index [{}] from pieceManager".format(self.currentPiece.index))
+							self.changeStatus("Attempting to get piece(s) from pieceManager")
+							while(len(self.currentPieces) < self.pieceLimit and not self.fileDownloaded):
+								recvPiece = self.pieManager.getPiece(self.pieces)
+								if(recvPiece.isEmpty == 0):
+									# recvPiece.blocks_downloaded = 0
+									# TO-DO
+									# Half downloaded pieces will be downloaded from the beginning, change later
+									recvPiece.latest_block_index = 0
+									# self.request_pipeline = []
+									# self.hasPiece = 1
+									self.currentPieces.append(recvPiece)
+									self.changeStatus("Received piece index [{}] from pieceManager".format(recvPiece.index))
+								else:
+									self.changeStatus("Received empty piece from pieceManager")
 						# elif (self.pieManager.createdQueue):
-						# 	print("CCCC")
 						# 	# pieceQueue is empty, close connection with peer
 						# 	#print("\033[95mDone! Closing thread\033[0m")
 						# 	self.changeStatus("\033[95mDone! Closing thread\033[0m")
@@ -477,52 +504,74 @@ class Peer:
 						# 	self.sock.close()
 						# 	return
 
-					try:
-						# Download if peer has a piece
-						if(self.hasPiece):
-							# If all blocks have been downloaded
-							# print("\033[92mInside hasPiece if\033[0m")
-							if self.currentPiece.blocks_downloaded == self.currentPiece.number_of_blocks:
-								print("About to submit - {}".format(self.currentPiece.index))
+					if(len(self.currentPieces)):
+						# If all blocks have been downloaded, submit the piece
+						# print("\033[92mInside hasPiece if\033[0m")
+						currentPiece2 = []
+						for p in self.currentPieces:
+							if p.blocks_downloaded == p.number_of_blocks:
+								print("About to submit - {}".format(p.index))
 								with self.tManager.piemLock:
-									print("[{}: {}] ({})".format(self.ip, self.port, self.currentPiece.index))
-									self.changeStatus("\033[92mSubmitting piece index: [{}]\033[0m".format(self.currentPiece.index))
-									self.pieManager.submitPiece(self.currentPiece)
-								self.hasPiece = 0
-								continue
+									# print("[{}: {}] ({})".format(self.ip, self.port, self.currentPiece.index))
+									self.changeStatus("\033[92mSubmitting piece index: [{}]\033[0m".format(p.index))
+									self.pieManager.submitPiece(p)
+								# self.hasPiece = 0
+								# continue
+							else:
+								currentPiece2.append(p)
 
-							#Send request messages to download piece
-							# Create request pipeline
-							# toQueue = PIPELINE_SIZE - len(self.request_pipeline)
-							# newRequests = []
-							# for i in range(toQueue):
-							# 	offset_val = self.next_block_req + i
-							# 	if offset_val < len(self.currentPiece.blocks):
-							# 		blockToRequest = self.currentPiece.blocks[offset_val]
-							# 		# If blockToRequest has not already been downloaded
-							# 		if blockToRequest != 1:
-							# 			# Add that block offset value to newRequests and outgoing requests pipeline
-							# 			newRequests.append(offset_val)
-							# 			self.request_pipeline.append(offset_val)
-							#
-							# # Save offset value of first block to be requested in the next iteration
-							# self.next_block_req = newRequests[-1] + 1
-							# # Send new requests
-							# self.send_request(newRequests)
-							# print("LBI: {}".format(self.latest_block_index))
-							if self.latest_block_index < self.currentPiece.number_of_blocks:
+						# Submitting pieces are removed from currentPieces list
+						self.currentPieces = currentPiece2
+
+						# Queue block indexes to request
+						for p in self.currentPieces:
+							if p.latest_block_index < p.number_of_blocks:
 								toQueue = PIPELINE_SIZE - len(self.request_pipeline)
-								print("toQueue: {} [{}, {}]".format(toQueue, self.ip, self.port))
-								for i in range(toQueue):
-									self.request_pipeline.append(self.latest_block_index)
-									self.latest_block_index += 1
-								# if self.latest_block_index >= self.currentPiece.number_of_blocks:
-								# 	self.latest_block_index = 0
+								# print("toQueue: {} [{}, {}]".format(toQueue, self.ip, self.port))
+								if (toQueue == 0):
+									self.changeStatus("\033[91mPipeline is full!\033[0m")
+								else:
+									self.changeStatus("\033[91mtoQueue:{}\033[0m".format(toQueue))
+								for _ in range(toQueue):
+									"""
+									[piece index, block index, whether this block is last block or not, last_block_size]
+									"""
+									if (p.latest_block_index == (p.number_of_blocks - 1)):
+										# Last block
+										self.request_pipeline.append([p.index, p.latest_block_index, 1, p.last_block_size])
+									else:
+										# Not last block
+										self.request_pipeline.append([p.index, p.latest_block_index, 0, p.last_block_size])
 
-								self.send_request()
+									self.changeInPipeSinceLastReq = 1
+									p.latest_block_index += 1
+									# All blocks for this piece have been added to queue
+									if (p.latest_block_index == p.number_of_blocks):
+										break
+							else:
+								self.changeStatus("\033[91mPI:{}, LBI:{}, NOB:{}\033[0m".format(p.index, p.latest_block_index, p.number_of_blocks))
 
-					except Exception as e:
-						print("\033[91m{}\033[0m".format(e))
+						self.send_request()
+						#Send request messages to download piece
+						# Create request pipeline
+						# toQueue = PIPELINE_SIZE - len(self.request_pipeline)
+						# newRequests = []
+						# for i in range(toQueue):
+						# 	offset_val = self.next_block_req + i
+						# 	if offset_val < len(self.currentPiece.blocks):
+						# 		blockToRequest = self.currentPiece.blocks[offset_val]
+						# 		# If blockToRequest has not already been downloaded
+						# 		if blockToRequest != 1:
+						# 			# Add that block offset value to newRequests and outgoing requests pipeline
+						# 			newRequests.append(offset_val)
+						# 			self.request_pipeline.append(offset_val)
+						#
+						# # Save offset value of first block to be requested in the next iteration
+						# self.next_block_req = newRequests[-1] + 1
+						# # Send new requests
+						# self.send_request(newRequests)
+						# print("LBI: {}".format(self.latest_block_index))
+
 
 				else:
 					self.changeStatus("\033[91mBeing Choked.\033[0m")

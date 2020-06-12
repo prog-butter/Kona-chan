@@ -44,7 +44,7 @@ class torrentManager:
 		"""
 		Oldest Status (lower index) → Newest Status (higher index)
 		"""
-		self.NUM_STATUS = 10
+		self.NUM_STATUS = 6
 		self.DISPLAY_STATUS = 1
 		self.statusList = []
 		for _ in range(self.NUM_STATUS):
@@ -142,15 +142,22 @@ class torrentManager:
 		# Handle other info received from response
 		if ('tracker id' in response.keys()):
 			self.trackerid = response['tracker id']
-		self.announceInterval = response['interval']
+		if ('interval' in response.keys()):
+			self.announceInterval = response['interval']
+		if ('min interval' in response.keys()):
+			self.announceInterval = response['min interval']
+		if ('interval' not in response.keys() and 'min interval' not in response.keys()):
+			self.announceInterval = 300
 
-		# TO-DO
-		# Handle new peer list from reannouncing
+		self.announceInterval = 60
 
 		# Instantiate a peer manager for this torrent file
 		if (announceEvent == "started"): # Needs to be created only once
 			self.changeStatus("Creating peer manager for this torrent")
 			self.pManager = pm.peerManager(response['peers'], self)
+		else:
+			#Give new peer list to peerManager
+			self.pManager.updatePeerList(response['peers'])
 
 		# Lastly start the timer
 		self.announceTimer = time.monotonic()
@@ -172,7 +179,8 @@ class torrentManager:
 				if (self.elapsed >= self.announceInterval):
 					self.announceTimer = 0
 			if (self.announceTimer == 0):
-				bdown = self.pieManager.getBytesDownloaded()
+				# bdown = self.pieManager.getBytesDownloaded()
+				bdown = 0
 				# Get bytes downloaded from pieceManager, left is (total - downloaded), event is empty for intermediate announces
 				self.announce(bdown, "None")
 

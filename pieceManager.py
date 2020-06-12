@@ -19,6 +19,7 @@ class pieceManager:
 		self.pieceQueue = [] # Store the pieces as a queue
 		self.downloadedPieces = [] # To keep track of which pieces have been downloaded
 		self.pieceQueueSize = len(self.tManager.pieceHashes)
+		self.bytesDownloaded = 0
 
 		#Add all pieces in order initially
 		for p in self.pieceList:
@@ -90,6 +91,7 @@ class pieceManager:
 		print("Actual Hash: {}".format(self.tManager.pieceHashes[piece.index]))
 		if(self.tManager.pieceHashes[piece.index] == m.digest()):
 			self.changeStatus("\033[92mHash Matched! [{}]\033[0m".format(piece.index))
+			self.bytesDownloaded += piece.piece_size
 			# Update downloadedPieces list
 			self.downloadedPieces[piece.index] = 1
 
@@ -122,7 +124,7 @@ class pieceManager:
 
 	# Print Status
 	def printStatus(self):
-		print("[{}]PIECE MANAGER [{}]".format(self.pieceQueueSize, self.updateInterval - self.elapsed))
+		print("[{}]PIECE MANAGER [{}] [D:{}]".format(self.pieceQueueSize, self.updateInterval - self.elapsed, (self.bytesDownloaded/1024**2)))
 		for i in range(len(self.statusList)):
 			print("[{}]".format(self.statusList[i]), end='')
 			self.statusList[i] = ""

@@ -18,7 +18,9 @@ class Piece:
 		self.last_block_size = self.block_size
 		self.isEmpty = isEmpty
 		self.isLastPiece = isLastPiece
+
 		self.blocks_downloaded = 0
+		self.latest_block_index = 0
 
 		if (isLastPiece == 0):
 			self.piece_size = pieceLength
