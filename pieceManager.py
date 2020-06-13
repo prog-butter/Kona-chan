@@ -84,6 +84,10 @@ class pieceManager:
 	# Get piece from peer
 	# Write to disk if hashcheck matches otherwise add piece back to queue
 	def submitPiece(self, piece):
+		if(piece.blocks_downloaded != piece.number_of_blocks):
+			self.changeStatus("\033[91mIncomplete piece ({}), putting back in queue\033[0m".format(piece.index))
+			self.pieceQueue.append(piece)
+			return
 		self.changeStatus("Received a completely downloaded piece <{}>".format(piece.index))
 		# Check download piece with hash
 		m = hashlib.sha1(piece.complete_piece())

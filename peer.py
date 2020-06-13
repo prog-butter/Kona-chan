@@ -138,6 +138,7 @@ class Peer:
 	def read_from_socket(self):
 		data = b''
 		while True:
+			self.changeStatus("Reading messages from buffer")
 			try:
 				buff = self.sock.recv(4096)
 				if len(buff) <= 0:
@@ -496,9 +497,12 @@ class Peer:
 				self.changeStatus("\033[91mThread Closed.\033[0m")
 				self.isGoodPeer = 0
 				self.readyToBeChecked = 1
-				for p in self.currentPieces:
-					self.changeStatus("\033[92mSubmitting piece index: [{}]\033[0m".format(p.index))
-					self.pieManager.submitPiece(p)
+				with self.tManager.piemLock:
+					for p in self.currentPieces:
+						self.changeStatus("\033[92mSubmitting piece index: [{}]\033[0m".format(p.index))
+						self.pieManager.submitPiece(p)
+
+				self.currentPieces = []
 				return
 
 			while self.running:
@@ -509,9 +513,12 @@ class Peer:
 						self.isGoodPeer = 0
 						self.readyToBeChecked = 1
 						self.changeStatus("\033[91mDid not get any pieces for {} seconds, closing thread.\033[0m".format(self.stuckInterval))
-						for p in self.currentPieces:
-							self.changeStatus("\033[92mSubmitting piece index: [{}]\033[0m".format(p.index))
-							self.pieManager.submitPiece(p)
+						with self.tManager.piemLock:
+							for p in self.currentPieces:
+								self.changeStatus("\033[92mSubmitting piece index: [{}]\033[0m".format(p.index))
+								self.pieManager.submitPiece(p)
+
+						self.currentPieces = []
 						return
 				else:
 					# Previous cycle was normal, reset timer
@@ -519,9 +526,12 @@ class Peer:
 				self.stuckFlag = 0
 				# self.sock.setblocking(False)
 				if (self.readyToBeChecked and not self.isGoodPeer):
-					for p in self.currentPieces:
-						self.changeStatus("\033[92mSubmitting piece index: [{}]\033[0m".format(p.index))
-						self.pieManager.submitPiece(p)
+					with self.tManager.piemLock:
+						for p in self.currentPieces:
+							self.changeStatus("\033[92mSubmitting piece index: [{}]\033[0m".format(p.index))
+							self.pieManager.submitPiece(p)
+
+					self.currentPieces = []
 					self.changeStatus("\033[91mThread Closed.\033[0m")
 					return
 				# if (self.keepAliveTimer):
