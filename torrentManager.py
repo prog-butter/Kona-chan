@@ -179,10 +179,11 @@ class torrentManager:
 				if (self.elapsed >= self.announceInterval):
 					self.announceTimer = 0
 			if (self.announceTimer == 0):
-				# bdown = self.pieManager.getBytesDownloaded()
+				bdown = self.pieManager.getBytesDownloaded()
 				bdown = 0
 				# Get bytes downloaded from pieceManager, left is (total - downloaded), event is empty for intermediate announces
-				self.announce(bdown, "None")
+				if (len(self.pManager.activePeerList) < 30):
+					self.announce(bdown, "None")
 
 			# _=os.system("cls")
 			if (self.DISPLAY_STATUS):

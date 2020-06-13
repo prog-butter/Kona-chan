@@ -67,6 +67,7 @@ class Peer:
 			self.statusList.append("None")
 
 		self.changeStatus("I am born!")
+		self.startedOnce = 0
 
 	#Change Status
 	def changeStatus(self, newStatus):
@@ -138,7 +139,8 @@ class Peer:
 			except Exception:
 				self.isGoodPeer = 0
 				self.readyToBeChecked = 1
-				print("\033[91m[{}:{}]Recieve failed.\033[0m".format(self.ip, self.port))
+				# print("\033[91m[{}:{}]Recieve failed.\033[0m".format(self.ip, self.port))
+				self.changeStatus("\033[91mRecieve failed.\033[0m")
 				break
 
 		# print(data)
@@ -446,6 +448,7 @@ class Peer:
 
 	# Main loop
 	def mainLoop(self):
+		self.startedOnce = 1
 		try:
 			# Initially
 			self.isGoodPeer = 1

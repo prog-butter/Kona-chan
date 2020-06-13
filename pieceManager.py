@@ -119,8 +119,7 @@ class pieceManager:
 
 	# Return no. of bytes downloaded by this piece manager
 	def getBytesDownloaded(self):
-		# TO-DO
-		return 0
+		return self.bytesDownloaded
 
 	# Print Status
 	def printStatus(self):

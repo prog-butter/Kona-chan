@@ -23,7 +23,7 @@ class peerManager:
 		self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=MAX_THREADS)
 		self.updatePeerList(peers)
 
-		# self.threadFutures = []
+		self.threadFutures = []
 
 		self.connectTimer = time.monotonic()
 		self.connectInterval = 30
@@ -95,7 +95,7 @@ class peerManager:
 		# Remove dead peers from active peer list
 		reqIndex = -1
 		for i in range(len(self.activePeerList)):
-			if (self.activePeerList[i].readyToBeChecked and not self.activePeerList[i].isGoodPeer):
+			if ((self.activePeerList[i].readyToBeChecked and self.activePeerList[i].isGoodPeer == 0) or self.activePeerList[i].startedOnce == 0):
 				reqIndex = i
 				break
 		if (reqIndex != -1):
