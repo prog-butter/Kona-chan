@@ -5,11 +5,11 @@ import colorama
 import logging
 import messages
 import bitstring
+import math
 
 # Globals
 colorama.init()
 DEFAULT_TIMEOUT_VALUE = 3
-PIPELINE_SIZE = 100
 PSTRLEN = 19
 PSTR = "BitTorrent protocol"
 
@@ -19,6 +19,7 @@ class Peer:
 		self.ip = ip
 		self.port = int(port)
 		self.sock = None
+		self.PIPELINE_SIZE = 10
 
 		self.isGoodPeer = 1
 		self.readyToBeChecked = 0
@@ -43,7 +44,7 @@ class Peer:
 		# Whether this peer has a piece to download or not
 		# self.hasPiece = 0
 		self.currentPieces = []
-		self.pieceLimit = PIPELINE_SIZE / torMan.pieceList[0].number_of_blocks
+		# self.pieceLimit = self.PIPELINE_SIZE / torMan.pieceList[0].number_of_blocks
 		self.fileDownloaded = 0
 		self.changeInPipeSinceLastReq = 0 # Only request if there is some change in the pipeline
 		# self.currentBlockOffset = -1
@@ -57,6 +58,13 @@ class Peer:
 		self.keepAliveTimer = 0
 		self.keepAliveInterval = 100
 		# self.elapsed = 0
+
+		self.calcRateTimer = 0
+		self.calcRateInterval = 1
+		self.calcBytesRecv = 0
+		self.downRate = 0
+
+		self.readCycleBuffer = 0
 
 		#Status
 		"""
@@ -78,7 +86,7 @@ class Peer:
 
 	# Print Status
 	def printStatus(self):
-		print("{}:{}[D:{}]".format(self.ip, self.port, (self.bytesDownloaded/1024**2)), end='')
+		print("{}:{}[RCB:{}][PS:{}][D:{}MB][DS:{}KB/s]".format(self.ip, self.port, self.readCycleBuffer, self.PIPELINE_SIZE, (self.bytesDownloaded/1024**2), self.downRate), end='')
 		for i in range(len(self.statusList)):
 			print("[{}]".format(self.statusList[i]), end='')
 			self.statusList[i] = ""
@@ -93,16 +101,16 @@ class Peer:
 
 		except socket.timeout:
 			#print("\033[31mSocket timed out!\033[39m")
-			self.isGoodPeer = 0
-			self.readyToBeChecked = 1
+			# self.isGoodPeer = 0
+			# self.readyToBeChecked = 1
 			self.changeStatus("\033[31mSocket timed out!\033[0m")
 			# self.sock.close()
 			return -1
 
 		except socket.error:
 			#print("\033[31mConnection error!\033[39m")
-			self.isGoodPeer = 0
-			self.readyToBeChecked = 1
+			# self.isGoodPeer = 0
+			# self.readyToBeChecked = 1
 			self.changeStatus("\033[31mConnection error!\033[0m")
 			# self.sock.close()
 			return -1
@@ -114,10 +122,10 @@ class Peer:
 
 		except Exception as e:
 			# self.running = False
-			self.isGoodPeer = 0
-			self.readyToBeChecked = 1
+			# self.isGoodPeer = 0
+			# self.readyToBeChecked = 1
 			self.changeStatus("\033[91mFailed to send message!\033[0m")
-			print("{} [IP: {}, Port: {}]".format(e, self.ip, self.port))
+			# print("{} [IP: {}, Port: {}]".format(e, self.ip, self.port))
 
 	# Reads from socket and returns the received data in bytes form
 	def read_from_socket(self):
@@ -129,6 +137,26 @@ class Peer:
 					break
 
 				data += buff
+				self.readCycleBuffer = len(data)
+				# print("{}:{}[RCB:{}]".format(self.ip, self.port, self.readCycleBuffer))
+
+				if(self.calcRateTimer == 0):
+					self.calcRateTimer = time.monotonic()
+
+				if(self.calcRateTimer):
+					self.calcBytesRecv += len(buff)
+					elapsed = time.monotonic() - self.calcRateTimer
+					if(elapsed > self.calcRateInterval):
+						self.downRate = self.calcBytesRecv / 1024 # in KBs
+						self.calcBytesRecv = 0
+						self.calcRateTimer = 0
+
+						# Update PIPELINE_SIZE
+						if (self.downRate < 20):
+							self.PIPELINE_SIZE = int(math.ceil(self.downRate + 2))
+						else:
+							self.PIPELINE_SIZE = int(math.ceil(self.downRate / 5 + 18))
+
 
 			except socket.timeout as e:
 				err = e.args[0]
@@ -178,8 +206,8 @@ class Peer:
 			self.send_unchoke()
 
 		except Exception:
-			self.isGoodPeer = 0
-			self.readyToBeChecked = 1
+			# self.isGoodPeer = 0
+			# self.readyToBeChecked = 1
 			print("\033[91mError sending or receiving Handshake message.\033[0m")
 			# self.sock.close()
 			return -1
@@ -359,7 +387,7 @@ class Peer:
 							break
 					del self.request_pipeline[reqIndex]
 
-					self.changeStatus("Making piece [{}, {}]".format(msg.piece_index, int(msg.block_offset / self.currentPieces[0].block_size)))
+					# self.changeStatus("Making piece [{}, {}]".format(msg.piece_index, int(msg.block_offset / self.currentPieces[0].block_size)))
 					# print("Making piece [{}, {}] [IP: {}, Port: {}]".format(msg.piece_index, int(msg.block_offset/self.currentPiece.block_size), self.ip, self.port))
 					#print("\033[95mData so far: {}\033[0m".format(self.currentPiece.final_data))
 					# Set that block as downloaded, increment downloaded blocks counter by 1, set hasPiece to 0 to receive new piece
@@ -462,7 +490,9 @@ class Peer:
 				return
 
 			while self.running:
+				# self.sock.setblocking(False)
 				if (self.readyToBeChecked and not self.isGoodPeer):
+					self.changeStatus("\033[91mThread Closed.\033[0m")
 					return
 				# if (self.keepAliveTimer):
 				# 	elapsed = time.monotonic() - self.keepAliveTimer
@@ -483,10 +513,10 @@ class Peer:
 				if not self.state['peer_choking']:
 					self.changeStatus("\033[92mAlive! ({})\033[0m".format(len(self.currentPieces)))
 					# Ask for piece(s) to download from pieceManager
-					if(len(self.currentPieces) < self.pieceLimit and not self.fileDownloaded):
+					if(len(self.currentPieces) < int(math.ceil(self.PIPELINE_SIZE / self.tManager.pieceList[0].number_of_blocks)) and not self.fileDownloaded):
 						with self.tManager.piemLock:
 							self.changeStatus("Attempting to get piece(s) from pieceManager")
-							while(len(self.currentPieces) < self.pieceLimit and not self.fileDownloaded):
+							while(len(self.currentPieces) < int(math.ceil(self.PIPELINE_SIZE / self.tManager.pieceList[0].number_of_blocks)) and not self.fileDownloaded):
 								recvPiece = self.pieManager.getPiece(self.pieces)
 								if(recvPiece.isEmpty == 0):
 									# recvPiece.blocks_downloaded = 0
@@ -529,7 +559,9 @@ class Peer:
 						# Queue block indexes to request
 						for p in self.currentPieces:
 							if p.latest_block_index < p.number_of_blocks:
-								toQueue = PIPELINE_SIZE - len(self.request_pipeline)
+								toQueue = self.PIPELINE_SIZE - len(self.request_pipeline)
+								if(toQueue < 0):
+									toQueue = 0
 								# print("toQueue: {} [{}, {}]".format(toQueue, self.ip, self.port))
 								if (toQueue == 0):
 									self.changeStatus("\033[91mPipeline is full!\033[0m")

@@ -123,7 +123,7 @@ class pieceManager:
 
 	# Print Status
 	def printStatus(self):
-		print("[{}]PIECE MANAGER [{}] [D:{}]".format(self.pieceQueueSize, self.updateInterval - self.elapsed, (self.bytesDownloaded/1024**2)))
+		print("[{}]PIECE MANAGER [{}] [D:{}MB]".format(self.pieceQueueSize, self.updateInterval - self.elapsed, (self.bytesDownloaded/1024**2)))
 		for i in range(len(self.statusList)):
 			print("[{}]".format(self.statusList[i]), end='')
 			self.statusList[i] = ""

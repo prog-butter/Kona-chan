@@ -20,13 +20,12 @@ class peerManager:
 		self.activePeerList = [] # Peers with which handshake was completed successfully
 		self.tManager = torMan
 
+		self.threadFutures = []
 		self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=MAX_THREADS)
 		self.updatePeerList(peers)
 
-		self.threadFutures = []
-
 		self.connectTimer = time.monotonic()
-		self.connectInterval = 30
+		self.connectInterval = 60
 		self.elapsed = 0
 
 		#Status
@@ -81,9 +80,21 @@ class peerManager:
 
 		# Start thread for all peers
 		for index in range(len(self.peerList)):
-			self.executor.submit(self.peerList[index].mainLoop)
+			self.threadFutures.append(self.executor.submit(self.peerList[index].mainLoop))
 
 	def loop(self):
+		# Thread status
+		# for future in self.threadFutures:
+		# 	try:
+		# 		ee = future.exception(timeout=0.001)
+		# 		if (ee != None):
+		# 			print(ee)
+		# 	except Exception as e:
+		# 		if(isinstance(e, concurrent.futures.TimeoutError)):
+		# 			pass
+		# 		else:
+		# 			print(e)
+
 		# Update active peers
 		for peer in self.peerList:
 			if (peer.readyToBeChecked == 0 and peer not in self.activePeerList): # Cannot decide whether this peer is active or not
@@ -111,7 +122,7 @@ class peerManager:
 			for peer in self.peerList:
 				# Connect with peers not already connected to
 				if (peer not in self.activePeerList):
-					self.executor.submit(peer.mainLoop)
+					self.threadFutures.append(self.executor.submit(peer.mainLoop))
 
 			self.connectTimer = time.monotonic()
 
