@@ -15,7 +15,7 @@ PSTR = "BitTorrent protocol"
 
 # Peer class representing every peer and it's attributes
 class Peer:
-	def __init__(self, ip, port, torMan):
+	def __init__(self, ip, port, torMan, peerMan):
 		self.ip = ip
 		self.port = int(port)
 		self.sock = None
@@ -51,6 +51,7 @@ class Peer:
 		# self.blocks_downloaded = 0
 		self.tManager = torMan
 		self.pieManager = self.tManager.pieManager
+		self.pManager = peerMan
 		self.sentRequest = 0
 		self.pipeline = []
 		self.bytesDownloaded = 0
@@ -63,6 +64,10 @@ class Peer:
 		self.calcRateInterval = 1
 		self.calcBytesRecv = 0
 		self.downRate = 0
+
+		self.stuckFlag = 0
+		self.stuckTimer = 0
+		self.stuckInterval = 20
 
 		self.readCycleBuffer = 0
 
@@ -86,7 +91,9 @@ class Peer:
 
 	# Print Status
 	def printStatus(self):
-		print("{}:{}[RCB:{}][PS:{}][D:{}MB][DS:{}KB/s]".format(self.ip, self.port, self.readCycleBuffer, self.PIPELINE_SIZE, (self.bytesDownloaded/1024**2), self.downRate), end='')
+		print("{}:{}[RCB:{}][PS:{}][D:{}MB][DS:{}KB/s]".format(self.ip, self.port, self.readCycleBuffer,
+			self.PIPELINE_SIZE, (self.bytesDownloaded/1024**2), self.downRate), end='')
+		self.downRate = 0
 		for i in range(len(self.statusList)):
 			print("[{}]".format(self.statusList[i]), end='')
 			self.statusList[i] = ""
@@ -101,16 +108,16 @@ class Peer:
 
 		except socket.timeout:
 			#print("\033[31mSocket timed out!\033[39m")
-			# self.isGoodPeer = 0
-			# self.readyToBeChecked = 1
+			self.isGoodPeer = 0
+			self.readyToBeChecked = 1
 			self.changeStatus("\033[31mSocket timed out!\033[0m")
 			# self.sock.close()
 			return -1
 
 		except socket.error:
 			#print("\033[31mConnection error!\033[39m")
-			# self.isGoodPeer = 0
-			# self.readyToBeChecked = 1
+			self.isGoodPeer = 0
+			self.readyToBeChecked = 1
 			self.changeStatus("\033[31mConnection error!\033[0m")
 			# self.sock.close()
 			return -1
@@ -122,8 +129,8 @@ class Peer:
 
 		except Exception as e:
 			# self.running = False
-			# self.isGoodPeer = 0
-			# self.readyToBeChecked = 1
+			self.isGoodPeer = 0
+			self.readyToBeChecked = 1
 			self.changeStatus("\033[91mFailed to send message!\033[0m")
 			# print("{} [IP: {}, Port: {}]".format(e, self.ip, self.port))
 
@@ -148,6 +155,8 @@ class Peer:
 					elapsed = time.monotonic() - self.calcRateTimer
 					if(elapsed > self.calcRateInterval):
 						self.downRate = self.calcBytesRecv / 1024 # in KBs
+						if(self.downRate > self.pManager.maxDownSpeed):
+							self.pManager.maxDownSpeed = self.downRate
 						self.calcBytesRecv = 0
 						self.calcRateTimer = 0
 
@@ -172,6 +181,7 @@ class Peer:
 				break
 
 		# print(data)
+		self.readCycleBuffer = 0
 		return data
 
 	# Do hanshake with peer
@@ -206,8 +216,8 @@ class Peer:
 			self.send_unchoke()
 
 		except Exception:
-			# self.isGoodPeer = 0
-			# self.readyToBeChecked = 1
+			self.isGoodPeer = 0
+			self.readyToBeChecked = 1
 			print("\033[91mError sending or receiving Handshake message.\033[0m")
 			# self.sock.close()
 			return -1
@@ -379,6 +389,7 @@ class Peer:
 					# Write data received within the block
 					p.makePiece(msg.block_offset, msg.block)
 					self.bytesDownloaded += msg.block_length
+					self.pManager.bytesDownloaded += msg.block_length
 					# Remove the received block from the request pipeline
 					reqIndex = 0
 					for i in range(len(self.request_pipeline)):
@@ -472,8 +483,6 @@ class Peer:
 		except Exception as e:
 			print("\033[91m{}\033[0m".format(e))
 
-
-
 	# Main loop
 	def mainLoop(self):
 		self.startedOnce = 1
@@ -487,11 +496,32 @@ class Peer:
 				self.changeStatus("\033[91mThread Closed.\033[0m")
 				self.isGoodPeer = 0
 				self.readyToBeChecked = 1
+				for p in self.currentPieces:
+					self.changeStatus("\033[92mSubmitting piece index: [{}]\033[0m".format(p.index))
+					self.pieManager.submitPiece(p)
 				return
 
 			while self.running:
+				if (self.stuckFlag == 1):
+					# Was stuck on previous cycle, continue counting
+					elapsed = time.monotonic() - self.stuckTimer
+					if (elapsed > self.stuckInterval):
+						self.isGoodPeer = 0
+						self.readyToBeChecked = 1
+						self.changeStatus("\033[91mDid not get any pieces for {} seconds, closing thread.\033[0m".format(self.stuckInterval))
+						for p in self.currentPieces:
+							self.changeStatus("\033[92mSubmitting piece index: [{}]\033[0m".format(p.index))
+							self.pieManager.submitPiece(p)
+						return
+				else:
+					# Previous cycle was normal, reset timer
+					self.stuckTimer = time.monotonic()
+				self.stuckFlag = 0
 				# self.sock.setblocking(False)
 				if (self.readyToBeChecked and not self.isGoodPeer):
+					for p in self.currentPieces:
+						self.changeStatus("\033[92mSubmitting piece index: [{}]\033[0m".format(p.index))
+						self.pieManager.submitPiece(p)
 					self.changeStatus("\033[91mThread Closed.\033[0m")
 					return
 				# if (self.keepAliveTimer):
@@ -565,6 +595,7 @@ class Peer:
 								# print("toQueue: {} [{}, {}]".format(toQueue, self.ip, self.port))
 								if (toQueue == 0):
 									self.changeStatus("\033[91mPipeline is full!\033[0m")
+									self.stuckFlag = 1
 								else:
 									self.changeStatus("\033[91mtoQueue:{}\033[0m".format(toQueue))
 								for _ in range(toQueue):
@@ -584,6 +615,7 @@ class Peer:
 									if (p.latest_block_index == p.number_of_blocks):
 										break
 							else:
+								self.stuckFlag = 1
 								self.changeStatus("\033[91mPI:{}, LBI:{}, NOB:{}\033[0m".format(p.index, p.latest_block_index, p.number_of_blocks))
 
 						self.send_request()

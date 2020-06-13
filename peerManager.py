@@ -28,6 +28,9 @@ class peerManager:
 		self.connectInterval = 60
 		self.elapsed = 0
 
+		self.bytesDownloaded = 0
+		self.maxDownSpeed = 0
+
 		#Status
 		"""
 		Oldest Status (lower index) → Newest Status (higher index)
@@ -46,7 +49,8 @@ class peerManager:
 
 	# Print Status
 	def printStatus(self):
-		print("[{}] PEER MANAGER [{}]".format(len(self.activePeerList), self.connectInterval - self.elapsed))
+		print("[{}] PEER MANAGER [{}] [D:{}MB] [MDS:{}KB/s]".format(len(self.activePeerList), self.connectInterval - self.elapsed,
+			(self.bytesDownloaded/1024**2), self.maxDownSpeed))
 		for i in range(len(self.statusList)):
 			print("[{}]".format(self.statusList[i]), end='')
 			self.statusList[i] = ""
@@ -67,8 +71,8 @@ class peerManager:
 			# Update offset for next peer
 			offset += 2
 			# Add parsed peer to peerlist
-			newpeer = p.Peer(ip, port, self.tManager)
-			if (newpeer not in updatedPeerList):
+			newpeer = p.Peer(ip, port, self.tManager, self)
+			if (newpeer not in updatedPeerList and newpeer not in self.activePeerList):
 				updatedPeerList.append(newpeer)
 		self.peerList = updatedPeerList
 

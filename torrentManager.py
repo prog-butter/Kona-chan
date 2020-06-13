@@ -190,5 +190,5 @@ class torrentManager:
 				self.printStatus()
 			self.pieManager.loop()
 			self.pManager.loop()
-			time.sleep(1)
+			time.sleep(0.8)
 			#self.shouldLoop = 0
